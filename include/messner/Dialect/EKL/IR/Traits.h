@@ -5,10 +5,10 @@
 
 #pragma once
 
-#include "messner/Dialect/EKL/Interfaces/TypeCheckOpInterface.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Typing/TypeCheckOpInterface.h"
 
 //===----------------------------------------------------------------------===//
 // Op traits

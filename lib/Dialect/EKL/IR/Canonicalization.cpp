@@ -3,13 +3,13 @@
 /// @file
 /// @author     Karl F. A. Friebel (karl.friebel@tu-dresden.de)
 
-#include "messner/Dialect/EKL/Analysis/AbstractTypeChecker.h"
 #include "messner/Dialect/EKL/Enums.h"
 #include "messner/Dialect/EKL/IR/Attributes.h"
 #include "messner/Dialect/EKL/IR/EKL.h"
 #include "messner/Dialect/EKL/IR/Ops.h"
 #include "messner/Dialect/EKL/IR/TypeUtils.h"
 #include "messner/Dialect/EKL/IR/Types.h"
+#include "mlir/Typing/TypeChecker.h"
 
 #include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
@@ -294,9 +294,10 @@ struct MergeSubscripts : OpRewritePattern<SubscriptOp> {
                 "requires at most one ellipsis");
 
         // Create a new subscript by concatenating the prefix with suffix.
-        const auto indices = llvm::to_vector(llvm::concat<Value>(
-            prefix.getSubscripts(),
-            suffix.getSubscripts()));
+        const auto indices = llvm::to_vector(
+            llvm::concat<Value>(
+                prefix.getSubscripts(),
+                suffix.getSubscripts()));
         rewriter.replaceOpWithNewOp<SubscriptOp>(
             suffix,
             prefix.getArray(),
@@ -354,10 +355,11 @@ struct InlineBroadcastSubscript : OpRewritePattern<SubscriptOp> {
                 arrayTy);
             rewriter.replaceAllUsesExcept(op, sunken, sunken);
             rewriter.modifyOpInPlace(op, [&]() {
-                op.getResult().setType(ExpressionType::get(
-                    getContext(),
-                    inTy.cloneWith(
-                        inTy.getExtents().take_back(arrayTy.getNumExtents()))));
+                op.getResult().setType(
+                    ExpressionType::get(
+                        getContext(),
+                        inTy.cloneWith(inTy.getExtents().take_back(
+                            arrayTy.getNumExtents()))));
             });
         }
         return success();
@@ -751,9 +753,10 @@ struct HoistCastBeforeBroadcast : OpRewritePattern<Cast> {
         rewriter.replaceAllUsesExcept(op, sink, sink);
         rewriter.modifyOpInPlace(op, [&]() {
             op.setOperand(bcast.getOperand());
-            op.getResult().setType(ExpressionType::get(
-                rewriter.getContext(),
-                inTy.cloneWith(outTy.getScalarType())));
+            op.getResult().setType(
+                ExpressionType::get(
+                    rewriter.getContext(),
+                    inTy.cloneWith(outTy.getScalarType())));
         });
         return success();
     }

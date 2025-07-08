@@ -7,7 +7,7 @@
 #ifndef EKL_TRAITS
 #define EKL_TRAITS
 
-include "messner/Dialect/EKL/Interfaces/TypeCheckOpInterface.td"
+include "mlir/Typing/TypeCheckOpInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/IR/Traits.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
@@ -53,13 +53,13 @@ def EKL_HasFunctors : TraitList<[
 
 // Trait that identifies a statement.
 def EKL_StatementOp : TraitList<[
-    DeclareOpInterfaceMethods<EKL_TypeCheckOpInterface>,
+    DeclareOpInterfaceMethods<TypeCheckOpInterface>,
     EKL_OpTrait<"IsStatement">]>;
 
 // Trait that identifies an expression.
 def EKL_ExpressionOp : TraitList<[
     ConditionallySpeculatable,
-    DeclareOpInterfaceMethods<EKL_TypeCheckOpInterface>,
+    DeclareOpInterfaceMethods<TypeCheckOpInterface>,
     EKL_OpTrait<"IsExpression">]>;
 
 // Trait that identifies a generator expression.

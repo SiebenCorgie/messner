@@ -134,7 +134,7 @@ def EKL_EvalOp : EKL_InteropBase<
             // As long as the expression type is unknown, there may be UB.
             DeclareOpInterfaceMethods<ConditionallySpeculatable>,
             // Must participate in type checking.
-            DeclareOpInterfaceMethods<EKL_TypeCheckOpInterface>]> {
+            DeclareOpInterfaceMethods<TypeCheckOpInterface>]> {
     let summary = "Evaluates an expression to an MLIR value";
     let description = [{
         The `ekl.eval` operation produces an MLIR value by evaluating an EKL
@@ -428,7 +428,7 @@ def EKL_IfOp : EKL_StatementBase<
             NoTerminator,
             EKL_HasFunctors,
             OpAsmOpInterface,
-            DeclareOpInterfaceMethods<EKL_TypeCheckOpInterface>]> {
+            DeclareOpInterfaceMethods<TypeCheckOpInterface>]> {
     let summary = "Diverges kernel execution";
     let description = [{
         The `ekl.if` operation allows for diverging execution in a kernel based
@@ -557,9 +557,11 @@ class EKL_ExpressionBase<string mnemonic, list<Trait> traits = []>
 
         Speculation::Speculatability getSpeculatability()
         {
+            std::printf("Oh no, I'm broken\n");
+            return Speculation::NotSpeculatable;
             // Only speculatable if fully typed.
-            return isFullyTyped() ? Speculation::Speculatable
-                                  : Speculation::NotSpeculatable;
+            //return isFullyTyped() ? Speculation::Speculatable
+            //                      : Speculation::NotSpeculatable;
         }
     }];
 }
@@ -791,7 +793,7 @@ def EKL_YieldOp : EKL_Op<
         [
             Pure,
             Terminator,
-            DeclareOpInterfaceMethods<EKL_TypeCheckOpInterface>]> {
+            DeclareOpInterfaceMethods<TypeCheckOpInterface>]> {
     let summary = "Region terminator for scopes";
     let description = [{
         The `ekl.yield` operation terminates a functor of an EKL generator
@@ -1187,8 +1189,11 @@ class EKL_CastBase<string name, list<Trait> traits = []>
         Speculation::Speculatability getSpeculatability()
         {
             // Only speculatable if fully typed.
-            return isFullyTyped() ? Speculation::Speculatable
-                                  : Speculation::NotSpeculatable;
+            std::printf("Oh no, I'm broken\n");
+            return Speculation::NotSpeculatable;
+            // Only speculatable if fully typed.
+            //return isFullyTyped() ? Speculation::Speculatable
+            //                      : Speculation::NotSpeculatable;
         }
     }];
 }
@@ -1284,8 +1289,11 @@ def EKL_BroadcastOp : EKL_CastBase<"broadcast"> {
         Speculation::Speculatability getSpeculatability()
         {
             // Only speculatable if fully typed.
-            return isFullyTyped() ? Speculation::Speculatable
-                                  : Speculation::NotSpeculatable;
+            std::printf("Oh no, I'm broken\n");
+            return Speculation::NotSpeculatable;
+            // Only speculatable if fully typed.
+            //return isFullyTyped() ? Speculation::Speculatable
+            //                      : Speculation::NotSpeculatable;
         }
     }];
 }

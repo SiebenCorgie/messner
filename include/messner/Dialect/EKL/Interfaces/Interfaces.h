@@ -6,4 +6,4 @@
 #pragma once
 
 #include "messner/Dialect/EKL/Interfaces/ContiguousType.h"
-#include "messner/Dialect/EKL/Interfaces/TypeCheckOpInterface.h"
+#include "mlir/Typing/TypeCheckOpInterface.h"

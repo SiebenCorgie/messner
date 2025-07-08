@@ -5,10 +5,10 @@
 
 #include "messner/Dialect/EKL/IR/Ops.h"
 
-#include "messner/Dialect/EKL/Analysis/AbstractTypeChecker.h"
 #include "messner/Dialect/EKL/Analysis/TypeCheckingAdaptor.h"
 #include "messner/Dialect/EKL/IR/Attributes.h"
 #include "messner/Dialect/EKL/IR/Types.h"
+#include "mlir/Typing/TypeChecker.h"
 
 #include <algorithm>
 #include <llvm/ADT/TypeSwitch.h>
@@ -1643,19 +1643,21 @@ static LogicalResult typeCheckArithmeticOp(
     // Arithmetic operations need to properly update the upper bounds on the
     // types of index values they produce.
     if (llvm::isa<ekl::IndexType>(unifiedTy.getScalarType())) {
-        const auto operandUpperBounds = llvm::to_vector(llvm::map_range(
-            adaptor.getParent()->getOperands(),
-            [&](Value operand) {
-                return llvm::cast<ekl::IndexType>(
-                           getScalarType(adaptor.getType(
-                               llvm::cast<Expression>(operand))))
-                    .getUpperBound();
-            }));
+        const auto operandUpperBounds = llvm::to_vector(
+            llvm::map_range(
+                adaptor.getParent()->getOperands(),
+                [&](Value operand) {
+                    return llvm::cast<ekl::IndexType>(
+                               getScalarType(adaptor.getType(
+                                   llvm::cast<Expression>(operand))))
+                        .getUpperBound();
+                }));
         return adaptor.refineBound(
             llvm::cast<Expression>(adaptor.getParent()->getResult(0)),
-            unifiedTy.cloneWith(ekl::IndexType::get(
-                unifiedTy.getContext(),
-                combineIndexBounds(operandUpperBounds))));
+            unifiedTy.cloneWith(
+                ekl::IndexType::get(
+                    unifiedTy.getContext(),
+                    combineIndexBounds(operandUpperBounds))));
     }
 
     // The result type is the unified type.

@@ -5,7 +5,9 @@
 
 #pragma once
 
-#include "messner/Dialect/EKL/Analysis/AbstractTypeChecker.h"
+#include "messner/Dialect/EKL/IR/TypeUtils.h"
+#include "messner/Dialect/EKL/IR/Types.h"
+#include "mlir/Typing/TypeChecker.h"
 
 namespace mlir::ekl {
 

@@ -1,15 +1,15 @@
 #pragma once
 
-#include "messner/Dialect/EKL/Analysis/AbstractTypeChecker.h"
-#include "messner/Dialect/EKL/Interfaces/TypeCheckOpInterface.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Typing/TypeCheckOpInterface.h"
+#include "mlir/Typing/TypeChecker.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 
 namespace mlir::ekl {
 
-struct TypeChecker : AbstractTypeChecker {
+struct TypeChecker : Typing::AbstractTypeChecker {
     [[nodiscard]] virtual Type getType(Expression expr) const override
     {
         if (const auto deduced = m_context.lookup(expr)) return deduced;
@@ -25,12 +25,12 @@ struct TypeChecker : AbstractTypeChecker {
     LogicalResult check(RewriterBase::Listener *listener = nullptr);
 
 private:
-    TypeCheckOpInterface popInvalid();
+    mlir::TypeCheckOpInterface popInvalid();
 
     void applyToIR(RewriterBase::Listener *listener = nullptr);
 
     llvm::DenseMap<Expression, Type> m_context;
-    llvm::DenseSet<TypeCheckOpInterface> m_invalid;
+    llvm::DenseSet<mlir::TypeCheckOpInterface> m_invalid;
 };
 
 /// Perform type checking for @p root and all of its descendants.

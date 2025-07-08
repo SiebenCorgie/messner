@@ -8,6 +8,6 @@
 #define EKL_INTERFACES
 
 include "messner/Dialect/EKL/Interfaces/ContiguousType.td"
-include "messner/Dialect/EKL/Interfaces/TypeCheckOpInterface.td"
+include "mlir/Typing/TypeCheckOpInterface.td"
 
 #endif

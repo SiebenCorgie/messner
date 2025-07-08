@@ -6,7 +6,8 @@
 #pragma once
 
 #include "messner/Dialect/EKL/Analysis/Casting.h"
-#include "messner/Dialect/EKL/Interfaces/TypeCheckOpInterface.h"
+#include "mlir/Typing/TypeCheckOpInterface.h"
+#include "mlir/Typing/TypeChecker.h"
 
 #include <optional>
 
@@ -150,7 +151,7 @@ private:
 /// The adaptor defines some convenience methods to perform common type checking
 /// tasks on an operation, which automatically generate error diagnostics when
 /// necessary.
-struct TypeCheckingAdaptor : AbstractTypeChecker {
+struct TypeCheckingAdaptor : Typing::AbstractTypeChecker {
     /// Initializes a TypeCheckingAdaptor using @p impl for @p parent .
     explicit TypeCheckingAdaptor(
         AbstractTypeChecker &impl,
@@ -304,7 +305,7 @@ private:
     Contradiction unifyImpl(SmallVectorImpl<Type> &types, Type &result) const;
 
     AbstractTypeChecker &m_impl;
-    TypeCheckOpInterface m_parent;
+    mlir::TypeCheckOpInterface m_parent;
 };
 
 } // namespace mlir::ekl
