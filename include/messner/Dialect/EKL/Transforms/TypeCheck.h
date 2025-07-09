@@ -1,5 +1,6 @@
 #pragma once
 
+#include "messner/Dialect/EKL/Analysis/TypeCheckingAdaptor.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Typing/TypeCheckOpInterface.h"
 #include "mlir/Typing/TypeChecker.h"
@@ -8,7 +9,7 @@
 #include "llvm/ADT/DenseSet.h"
 
 namespace mlir::ekl {
-
+/*
 struct TypeChecker : Typing::AbstractTypeChecker {
     [[nodiscard]] virtual Type getType(Expression expr) const override
     {
@@ -32,7 +33,7 @@ private:
     llvm::DenseMap<Expression, Type> m_context;
     llvm::DenseSet<mlir::TypeCheckOpInterface> m_invalid;
 };
-
+*/
 /// Perform type checking for @p root and all of its descendants.
 ///
 /// @pre    `root`

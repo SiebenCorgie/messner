@@ -15,9 +15,11 @@
 #include <llvm/Support/Casting.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OpImplementation.h>
+#include <mlir/IR/TypeSystem.h>
 
 using namespace mlir;
 using namespace mlir::ekl;
+using namespace mlir::Typing;
 
 std::function<void(OpBuilder &, Location, ValueRange)>
 mlir::ekl::getFunctorBuilder(
@@ -465,15 +467,20 @@ LogicalResult IntroOp::inferReturnTypes(
 Speculation::Speculatability EvalOp::getSpeculatability()
 {
     // Speculation is not allowed until UB can be excluded.
-    return isFullyTyped() ? Speculation::Speculatable
-                          : Speculation::NotSpeculatable;
+    return mlir::ekl::isFullyTyped(getOperation())
+             ? Speculation::Speculatable
+             : Speculation::NotSpeculatable;
 }
 
 bool EvalOp::areCastCompatible(TypeRange inputs, TypeRange outputs)
 {
     const auto in  = llvm::dyn_cast<ExpressionType>(inputs.front());
     const auto out = outputs.front();
-    return in && (!in.getTypeBound() || isSubtype(in.getTypeBound(), out));
+    return in
+        && (!in.getTypeBound()
+            || mlir::Typing::MLIRTypeChecker()
+                   .getTypeSystem(&in.getDialect())
+                   .isSubtype(in.getTypeBound(), out));
 }
 
 LogicalResult EvalOp::typeCheck(AbstractTypeChecker &typeChecker)
@@ -619,7 +626,8 @@ LogicalResult KernelOp::verify()
 
 Speculation::Speculatability ReadOp::getSpeculatability()
 {
-    if (!isFullyTyped()) return Speculation::NotSpeculatable;
+    if (!mlir::ekl::isFullyTyped(getOperation()))
+        return Speculation::NotSpeculatable;
     // TODO: Implement more concrete reference kinds.
     return Speculation::Speculatable;
 }
@@ -644,7 +652,8 @@ LogicalResult ReadOp::typeCheck(AbstractTypeChecker &typeChecker)
 
 Speculation::Speculatability WriteOp::getSpeculatability()
 {
-    if (!isFullyTyped()) return Speculation::NotSpeculatable;
+    if (!mlir::ekl::isFullyTyped(getOperation()))
+        return Speculation::NotSpeculatable;
     // TODO: Implement more concrete reference kinds.
     return Speculation::NotSpeculatable;
 }

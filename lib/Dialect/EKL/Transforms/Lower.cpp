@@ -138,7 +138,7 @@ struct ExpandEllipsisSubscript : OpRewritePattern<SubscriptOp> {
     LogicalResult
     matchAndRewrite(SubscriptOp op, PatternRewriter &rewriter) const final
     {
-        if (!op.isFullyTyped())
+        if (!mlir::ekl::isFullyTyped(op))
             return rewriter.notifyMatchFailure(op, "not fully typed");
 
         // Find the ellipsis operand, if any.

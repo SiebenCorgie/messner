@@ -551,6 +551,7 @@ class EKL_ExpressionBase<string mnemonic, list<Trait> traits = []>
     }];
 
     code extraClassDeclaration = [{
+    /*FIXME
         //===--------------------------------------------------------------===//
         // ConditionallySpeculatable
         //===--------------------------------------------------------------===//
@@ -563,6 +564,7 @@ class EKL_ExpressionBase<string mnemonic, list<Trait> traits = []>
             //return isFullyTyped() ? Speculation::Speculatable
             //                      : Speculation::NotSpeculatable;
         }
+    */
     }];
 }
 
@@ -742,8 +744,6 @@ def EKL_SubscriptOp : EKL_ExpressionBase<
         attr-dict
         custom<Result>(type($result))
     }];
-
-    code extraClassDeclaration = [{}];
 }
 
 def EKL_StackOp : EKL_ExpressionBase<"stack", [Pure]> {
@@ -1181,7 +1181,7 @@ class EKL_CastBase<string name, list<Trait> traits = []>
             // The cast target type must be known.
             return !!llvm::cast<ExpressionType>(outputs[0]).getTypeBound();
         }
-
+    /*FIXME
         //===--------------------------------------------------------------===//
         // ConditionallySpeculatable
         //===--------------------------------------------------------------===//
@@ -1195,6 +1195,7 @@ class EKL_CastBase<string name, list<Trait> traits = []>
             //return isFullyTyped() ? Speculation::Speculatable
             //                      : Speculation::NotSpeculatable;
         }
+    */
     }];
 }
 
@@ -1281,7 +1282,7 @@ def EKL_BroadcastOp : EKL_CastBase<"broadcast"> {
             // This is decided by the type checker.
             return true;
         }
-
+        /*FIXME
         //===--------------------------------------------------------------===//
         // ConditionallySpeculatable
         //===--------------------------------------------------------------===//
@@ -1295,6 +1296,7 @@ def EKL_BroadcastOp : EKL_CastBase<"broadcast"> {
             //return isFullyTyped() ? Speculation::Speculatable
             //                      : Speculation::NotSpeculatable;
         }
+        */
     }];
 }
 

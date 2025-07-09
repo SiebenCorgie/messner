@@ -9,141 +9,27 @@
 #include "mlir/Typing/TypeCheckOpInterface.h"
 #include "mlir/Typing/TypeChecker.h"
 
+#include <mlir/Typing/Bound.h>
+#include <mlir/Typing/Contradiction.h>
 #include <optional>
 
 namespace mlir::ekl {
 
-/// Return type of an operation that checks the premise of an implication.
-///
-/// This type supports an assignment-if pattern, where contextual conversion to
-/// @c true indicates a contradiction that invalidates the implication. However,
-/// a contradiction that is not classified as an error might still not contain
-/// a diagnostic, so converting the contained value to LogicalResult might yield
-/// a success anyway.
-struct [[nodiscard]] Contradiction : std::optional<InFlightDiagnostic> {
-    using base = std::optional<InFlightDiagnostic>;
+bool isFullyTyped(Operation *op)
+{
+    const auto isUnbounded  = [](Type type) { return !getTypeBound(type); };
+    const auto hasUnbounded = [&](TypeRange types) {
+        return llvm::any_of(types, isUnbounded);
+    };
 
-    using base::base;
+    if (hasUnbounded(op->getOperandTypes())) return false;
+    if (hasUnbounded(op->getResultTypes())) return false;
 
-    /// Obtains the no contradiction result.
-    static Contradiction none() { return std::nullopt; }
-    /// Obtains a Contradiction without an error.
-    static Contradiction indeterminate()
-    {
-        return Contradiction(std::in_place);
-    }
-    /// Obtains a Contradiction with an error.
-    static Contradiction error(InFlightDiagnostic error)
-    {
-        return Contradiction(std::in_place, std::move(error));
-    }
+    return true;
+}
 
-    /// Ignores the contained error, if any.
-    void ignore()
-    {
-        if (this->has_value()) this->value().abandon();
-    }
-
-    /// Attaches a note to the contained error, if any.
-    ///
-    /// @param              location    Optional location for the diagnostic.
-    /// @param              fn          Function to populate the note.
-    ///
-    /// @return Contradiction.
-    Contradiction explain(
-        std::optional<Location> location,
-        function_ref<void(Diagnostic &)> fn) &&
-    {
-        return std::move(*this).explainImpl(location, fn);
-    }
-    /// Attaches a note to the contained error, if any.
-    ///
-    /// @param              location    Optional location for the diagnostic.
-    /// @param              what        Message to attach.
-    ///
-    /// @return Contradiction.
-    Contradiction
-    explain(std::optional<Location> location, const llvm::Twine &what) &&
-    {
-        return std::move(*this).explainImpl(location, [&](Diagnostic &diag) {
-            diag << what;
-        });
-    }
-    /// Attaches a note to the contained error, if any.
-    ///
-    /// @param              type       Type to mention.
-    ///
-    /// @return Contradiction.
-    Contradiction explain(Type type) &&
-    {
-        return std::move(*this).explainImpl(
-            std::nullopt,
-            [&](Diagnostic &diag) { diag << "found type: " << type; });
-    }
-    /// Attaches a note to the contained error, if any.
-    ///
-    /// @param              types       Types to mention.
-    ///
-    /// @return Contradiction.
-    Contradiction explain(ArrayRef<Type> types) &&
-    {
-        return std::move(*this).explainImpl(
-            std::nullopt,
-            [&](Diagnostic &diag) {
-                diag << "found types: ";
-                llvm::interleaveComma(types, diag);
-            });
-    }
-    /// Attaches a note to the contained error, if any.
-    ///
-    /// @param              expr        Expression to mention.
-    ///
-    /// @return Contradiction.
-    Contradiction explain(Expression expr) &&
-    {
-        return std::move(*this).explain(expr.getLoc(), "from this expression");
-    }
-    /// Attaches a note to the contained error, if any.
-    ///
-    /// @pre    @p exprs only contains Expression elements.
-    ///
-    /// @param              exprs       Expressions to mention.
-    ///
-    /// @return Contradiction.
-    Contradiction explain(ValueRange exprs) &&
-    {
-        return std::move(*this).explainImpl([&](Diagnostic &diag) {
-            for (auto expr : exprs)
-                diag.attachNote(expr.getLoc()) << "from this expression";
-        });
-    }
-
-    /// Obtains a LogicalResult that indicates whether an error is contained.
-    /*implicit*/ operator LogicalResult() const
-    {
-        return success(!this->has_value() || succeeded(this->value()));
-    }
-    /// Obtains the contained error, if any.
-    /*implicit*/ operator InFlightDiagnostic()
-    {
-        return std::move(*this).value_or(InFlightDiagnostic{});
-    }
-
-private:
-    friend struct TypeCheckingAdaptor;
-
-    Contradiction explainImpl(auto fn) &&
-    {
-        if (this->has_value() && failed(value()))
-            fn(*(this->value().getUnderlyingDiagnostic()));
-        return std::move(*this);
-    }
-    Contradiction explainImpl(std::optional<Location> location, auto fn) &&
-    {
-        return std::move(*this).explainImpl(
-            [&](Diagnostic &diag) { fn(diag.attachNote(location)); });
-    }
-};
+/// Type of a value that supports type checking.
+using Expression = TypedValue<ExpressionType>;
 
 /// Provides an adaptor around an AbstractTypeChecker bound to some
 /// TypeCheckOpInterface.
@@ -151,36 +37,39 @@ private:
 /// The adaptor defines some convenience methods to perform common type checking
 /// tasks on an operation, which automatically generate error diagnostics when
 /// necessary.
-struct TypeCheckingAdaptor : Typing::AbstractTypeChecker {
+struct TypeCheckingAdaptor : Typing::MLIRTypeChecker {
     /// Initializes a TypeCheckingAdaptor using @p impl for @p parent .
     explicit TypeCheckingAdaptor(
-        AbstractTypeChecker &impl,
+        Typing::MLIRTypeChecker &impl,
         TypeCheckOpInterface parent)
             : m_impl(impl),
               m_parent(parent)
     {}
 
     /// Gets the AbstractTypeChecker.
-    [[nodiscard]] AbstractTypeChecker &getImpl() { return m_impl; }
+    [[nodiscard]] Typing::MLIRTypeChecker &getImpl() { return m_impl; }
     /// Gets the AbstractTypeChecker.
-    [[nodiscard]] const AbstractTypeChecker &getImpl() const { return m_impl; }
+    [[nodiscard]] const Typing::MLIRTypeChecker &getImpl() const
+    {
+        return m_impl;
+    }
     /// Gets the parent operation
     [[nodiscard]] TypeCheckOpInterface getParent() const { return m_parent; }
 
     /// @copydoc AbstractTypeChecker::getType(Expression)
-    [[nodiscard]] virtual Type getType(Expression expr) const override
+    [[nodiscard]] virtual Type getType(Value value) const
     {
-        return getImpl().getType(expr);
+        return getImpl().get(value);
     }
     /// @copydoc AbstractTypeChecker::refineBound(Expression, Type)
-    virtual LogicalResult refineBound(Expression expr, Type incoming) override
+    virtual LogicalResult refineBound(Operation *op, Type incoming)
     {
-        return getImpl().refineBound(expr, incoming);
+        return getImpl().refineBound(op, incoming);
     }
     /// @copydoc AbstractTypeChecker::meetBound(Expression)
-    virtual LogicalResult meetBound(Expression expr, Type incoming) override
+    virtual LogicalResult meetBound(Value value, Type incoming)
     {
-        return getImpl().meetBound(expr, incoming);
+        return getImpl().meetLog(value, Typing::Bound(incoming));
     }
     /// @copydoc AbstractTypeChecker::invalidate(Operation *)
     virtual void invalidate(Operation *op) override
@@ -191,45 +80,58 @@ struct TypeCheckingAdaptor : Typing::AbstractTypeChecker {
     // TODO: Document all these.
 
     template<type_constraint ResultType>
-    Contradiction
+    std::optional<Typing::Contradiction>
     require(Type type, ResultType &result, const llvm::Twine &what) const
     {
         if (!type) {
             result = ResultType{};
-            return Contradiction::indeterminate();
+            return std::nullopt;
         }
-        if ((result = llvm::dyn_cast<ResultType>(type)))
-            return Contradiction::none();
-        return Contradiction(emitError() << "expected " << what).explain(type);
+        if ((result = llvm::dyn_cast<ResultType>(type))) return std::nullopt;
+        return m_impl.fatal(Typing::Source())
+            //.explain(type)
+            ;
     }
 
     template<type_constraint ResultType>
-    Contradiction
+    std::optional<Typing::Contradiction>
     require(Expression expr, ResultType &result, const llvm::Twine &what) const
     {
         return require(getType(expr), result, what).explain(expr);
     }
 
-    Contradiction require(Type result, Type supertype) const
+    std::optional<Typing::Contradiction>
+    require(Type result, Type supertype) const
     {
-        if (!result) return Contradiction::indeterminate();
-        if (isSubtype(result, supertype)) return Contradiction::none();
-        return Contradiction(
-            emitError() << result << " is not a subtype of " << supertype);
+        if (!result) return std::nullopt;
+        if (m_impl.getTypeSystem(&result.getDialect())
+                .isSubtype(result, supertype))
+            return std::nullopt;
+        // FIXME
+        //  return Contradiction(
+        //      emitError() << result << " is not a subtype of " << supertype);
+        return m_impl.fatal(Typing::Source());
     }
 
-    Contradiction require(Expression expr, Type supertype, Type &result) const
+    std::optional<Typing::Contradiction>
+    require(Operation *op, Type supertype, Type &result) const
     {
-        result = getType(expr);
-        return require(result, supertype).explain(expr);
+        assert(op->getNumResults() == 1);
+        result = m_impl.get(op->getResult(0));
+        return require(result, supertype)
+            // FIXME
+            //.explain(expr)
+            ;
     }
 
-    Contradiction unify(ArrayRef<Type> types, Type &result) const;
+    std::optional<Typing::Contradiction>
+    unify(ArrayRef<Type> types, Type &result) const;
 
-    Contradiction unify(ValueRange exprs, Type &result) const;
+    std::optional<Typing::Contradiction>
+    unify(ValueRange exprs, Type &result) const;
 
     template<type_constraint ResultType>
-    Contradiction
+    std::optional<Typing::Contradiction>
     unify(ArrayRef<Type> types, ResultType &result, const llvm::Twine &what)
         const
     {
@@ -243,47 +145,54 @@ struct TypeCheckingAdaptor : Typing::AbstractTypeChecker {
     }
 
     template<type_constraint ResultType>
-    Contradiction
+    std::optional<Typing::Contradiction>
     unify(ValueRange exprs, ResultType &result, const llvm::Twine &what) const
     {
-        const auto types = getTypes(exprs);
+        const auto types = exprs.getTypes();
         return unify<ResultType>(types, result, what).explain(exprs);
     }
 
-    Contradiction
+    std::optional<Typing::Contradiction>
     broadcast(ArrayRef<Type> types, SmallVectorImpl<extent_t> &extents) const;
 
-    Contradiction
+    std::optional<Typing::Contradiction>
     broadcast(ValueRange exprs, SmallVectorImpl<extent_t> &extents) const;
 
-    Contradiction
+    std::optional<Typing::Contradiction>
     broadcast(Type type, ExtentRange extents, ArrayType &result) const;
 
-    Contradiction
+    std::optional<Typing::Contradiction>
     broadcast(Expression expr, ExtentRange extents, ArrayType &result) const
     {
-        return broadcast(getType(expr), extents, result).explain(expr);
+        return broadcast(getType(expr), extents, result)
+            // FIXME: .explain(expr)
+            ;
     }
 
-    Contradiction broadcast(MutableArrayRef<Type> types) const;
+    std::optional<Typing::Contradiction>
+    broadcast(MutableArrayRef<Type> types) const;
 
-    Contradiction
+    std::optional<Typing::Contradiction>
     broadcast(ValueRange exprs, SmallVectorImpl<Type> &result) const;
 
-    Contradiction coerce(Type type, Type to) const
+    std::optional<Typing::Contradiction> coerce(Type type, Type to) const
     {
-        if (!type) return Contradiction::indeterminate();
-        if (ekl::canCoerce(type, to)) return Contradiction::none();
-        return emitError() << "can't coerce " << type << " to " << to;
+        // FIXME: if (!type) return Contradiction::indeterminate();
+        if (!type) return std::nullopt;
+        if (ekl::canCoerce(type, to)) return std::nullopt;
+        // FIXME: return emitError() << "can't coerce " << type << " to " << to;
+        return m_impl.fatal(Typing::Source());
     }
 
-    Contradiction coerce(Expression expr, Type to) const
+    std::optional<Typing::Contradiction> coerce(Expression expr, Type to) const
     {
-        return coerce(getType(expr), to).explain(expr);
+        return coerce(getType(expr), to)
+            // FIXME: .explain(expr)
+            ;
     }
 
     template<broadcast_type_constraint ResultType = BroadcastType>
-    Contradiction broadcastAndUnify(
+    std::optional<Typing::Contradiction> broadcastAndUnify(
         ValueRange exprs,
         ResultType &result,
         const llvm::Twine &what = {}) const
@@ -302,9 +211,10 @@ struct TypeCheckingAdaptor : Typing::AbstractTypeChecker {
     }
 
 private:
-    Contradiction unifyImpl(SmallVectorImpl<Type> &types, Type &result) const;
+    std::optional<Typing::Contradiction>
+    unifyImpl(SmallVectorImpl<Type> &types, Type &result) const;
 
-    AbstractTypeChecker &m_impl;
+    Typing::MLIRTypeChecker &m_impl;
     mlir::TypeCheckOpInterface m_parent;
 };
 

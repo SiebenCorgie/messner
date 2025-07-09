@@ -22,6 +22,7 @@
 #include <mlir/IR/Matchers.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/TypeSystem.h>
 #include <optional>
 
 using namespace mlir;
@@ -45,7 +46,7 @@ OpFoldResult IntroOp::fold(FoldAdaptor adaptor)
 
 OpFoldResult EvalOp::fold(FoldAdaptor adaptor)
 {
-    if (!isFullyTyped()) return {};
+    if (!mlir::ekl::isFullyTyped(getOperation())) return {};
 
     if (auto intro = getOperand().getDefiningOp<IntroOp>()) {
         if (intro.getOperand().getType() == getResult().getType()) {
@@ -82,7 +83,8 @@ LogicalResult StaticOp::fold(FoldAdaptor, SmallVectorImpl<OpFoldResult> &)
 LogicalResult IfOp::fold(FoldAdaptor, SmallVectorImpl<OpFoldResult> &results)
 {
     // Folding only applies to fully typed if expressions.
-    if (!getResult() || !isFullyTyped()) return failure();
+    if (!getResult() || !mlir::ekl::isFullyTyped(getOperation()))
+        return failure();
 
     // Eliminate the operation if both branches yield the same value.
     const auto thenValue = getThenExpression();
@@ -102,7 +104,7 @@ struct InlineIf : OpRewritePattern<IfOp> {
     LogicalResult
     matchAndRewrite(IfOp op, PatternRewriter &rewriter) const final
     {
-        if (!op.isFullyTyped())
+        if (!mlir::ekl::isFullyTyped(op))
             return rewriter.notifyMatchFailure(op, "requires concrete types");
 
         // Determine if there is a statically known code path.
@@ -221,7 +223,7 @@ struct ExpandEllipsisSubscript : OpRewritePattern<SubscriptOp> {
     LogicalResult
     matchAndRewrite(SubscriptOp op, PatternRewriter &rewriter) const final
     {
-        if (!op.isFullyTyped())
+        if (!mlir::ekl::isFullyTyped(op))
             return rewriter.notifyMatchFailure(op, "requires concrete types");
 
         // Find the ellipsis operand, if any.
@@ -276,7 +278,8 @@ struct MergeSubscripts : OpRewritePattern<SubscriptOp> {
             return rewriter.notifyMatchFailure(
                 suffix,
                 "requires prefix subscript");
-        if (!suffix.isFullyTyped() || !prefix.isFullyTyped())
+        if (!mlir::ekl::isFullyTyped(suffix)
+            || !mlir::ekl::isFullyTyped(prefix))
             return rewriter.notifyMatchFailure(
                 suffix,
                 "requires concrete types");
@@ -313,7 +316,7 @@ struct InlineBroadcastSubscript : OpRewritePattern<SubscriptOp> {
     LogicalResult
     matchAndRewrite(SubscriptOp op, PatternRewriter &rewriter) const final
     {
-        if (!op.isFullyTyped())
+        if (!mlir::ekl::isFullyTyped(op))
             return rewriter.notifyMatchFailure(op, "requires concrete types");
         auto bcast = op.getArray().getDefiningOp<BroadcastOp>();
         if (!bcast)
@@ -448,7 +451,7 @@ OpFoldResult StackOp::fold(FoldAdaptor adaptor)
 OpFoldResult AssocOp::fold(FoldAdaptor)
 {
     // Only applies to fully typed assoc expressions.
-    if (!isFullyTyped()) return {};
+    if (!mlir::ekl::isFullyTyped(getOperation())) return {};
 
     // If the yielded expression was folded to a scalar, a splat can be derived.
     const auto expr = getMapExpression();
@@ -683,7 +686,7 @@ void ZipOp::getCanonicalizationPatterns(
 OpFoldResult ConstexprOp::fold(FoldAdaptor)
 {
     // Only applies to fully typed constant expressions.
-    if (!isFullyTyped()) return {};
+    if (!mlir::ekl::isFullyTyped(getOperation())) return {};
 
     // Fold to the constant expression value.
     LiteralAttr literal;
@@ -699,7 +702,7 @@ OpFoldResult UnifyOp::fold(FoldAdaptor adaptor)
 {
     // Only applies to fully typed casts.
     // NOTE: The CastOpInterface folder already folds away no-op casts.
-    if (!isFullyTyped()) return {};
+    if (!mlir::ekl::isFullyTyped(getOperation())) return {};
 
     // The subtype relation is transitive, so unification casts are as well.
     if (auto prior = getOperand().getDefiningOp<UnifyOp>(); prior) {
@@ -804,7 +807,7 @@ OpFoldResult BroadcastOp::fold(FoldAdaptor adaptor)
 {
     // Only applies to fully typed casts.
     // NOTE: The CastOpInterface folder already folds away no-op casts.
-    if (!isFullyTyped()) return {};
+    if (!mlir::ekl::isFullyTyped(getOperation())) return {};
 
     // The compatibility relation is transitive, so broadcasting is as well.
     if (auto prior = getOperand().getDefiningOp<BroadcastOp>(); prior) {
@@ -861,12 +864,14 @@ struct RewriteCoerceToUnify : OpRewritePattern<CoerceOp> {
     LogicalResult
     matchAndRewrite(CoerceOp op, PatternRewriter &rewriter) const final
     {
-        if (!op.isFullyTyped())
+        if (!mlir::ekl::isFullyTyped(op))
             return rewriter.notifyMatchFailure(op, "requires concrete types");
 
         const auto inTy  = op.getOperand().getType().getTypeBound();
         const auto outTy = op.getType().getTypeBound();
-        if (!isSubtype(inTy, outTy))
+        if (!mlir::Typing::MLIRTypeChecker()
+                 .getTypeSystem(op->getDialect())
+                 .isSubtype(inTy, outTy))
             return rewriter.notifyMatchFailure(op, "requires subtype");
 
         rewriter.replaceOpWithNewOp<UnifyOp>(op, op.getOperand(), outTy);

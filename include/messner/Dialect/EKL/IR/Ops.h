@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "messner/Dialect/EKL/Analysis/TypeCheckingAdaptor.h"
 #include "messner/Dialect/EKL/IR/Attributes.h"
 #include "messner/Dialect/EKL/IR/Traits.h"
 #include "mlir/IR/OpDefinition.h"

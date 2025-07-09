@@ -51,7 +51,7 @@ struct UnifyWriteValue : OpRewritePattern<WriteOp>, ImplicitCast {
     LogicalResult
     matchAndRewrite(WriteOp op, PatternRewriter &rewriter) const final
     {
-        if (!op.isFullyTyped())
+        if (!mlir::ekl::isFullyTyped(op))
             return rewriter.notifyMatchFailure(op, "not fully typed");
 
         // Value operand implicitly unifies to output array type.
@@ -71,7 +71,7 @@ struct BroadcastAndUnifyStackOperands : OpRewritePattern<StackOp>,
     LogicalResult
     matchAndRewrite(StackOp op, PatternRewriter &rewriter) const final
     {
-        if (!op.isFullyTyped())
+        if (!mlir::ekl::isFullyTyped(op))
             return rewriter.notifyMatchFailure(op, "not fully typed");
 
         // The operand type must be the result type without the stacked extent.
@@ -89,7 +89,7 @@ struct BroadcastZipOperands : OpRewritePattern<ZipOp>, ImplicitCast {
     LogicalResult
     matchAndRewrite(ZipOp op, PatternRewriter &rewriter) const final
     {
-        if (!op.isFullyTyped()
+        if (!mlir::ekl::isFullyTyped(op)
             || !op.getCombinatorExpression().getType().getTypeBound())
             return rewriter.notifyMatchFailure(op, "not fully typed");
 
@@ -114,7 +114,7 @@ struct BroadcastAndUnifyChoiceOperands : OpRewritePattern<ChoiceOp>,
     LogicalResult
     matchAndRewrite(ChoiceOp op, PatternRewriter &rewriter) const final
     {
-        if (!op.isFullyTyped())
+        if (!mlir::ekl::isFullyTyped(op))
             return rewriter.notifyMatchFailure(op, "not fully typed");
 
         const auto altTy =
@@ -149,7 +149,7 @@ struct BroadcastAndUnifyRelational
     LogicalResult
     matchAndRewrite(Operation *op, PatternRewriter &rewriter) const final
     {
-        if (!ekl::impl::isFullyTyped(op))
+        if (!mlir::ekl::isFullyTyped(op))
             return rewriter.notifyMatchFailure(op, "not fully typed");
 
         // Broadcast and unify the arguments to the common array type.
@@ -176,7 +176,7 @@ struct BroadcastAndUnifyTrait : OpTraitRewritePattern<Trait>, ImplicitCast {
     LogicalResult
     matchAndRewrite(Operation *op, PatternRewriter &rewriter) const final
     {
-        if (!ekl::impl::isFullyTyped(op))
+        if (!mlir::ekl::isFullyTyped(op))
             return rewriter.notifyMatchFailure(op, "not fully typed");
 
         if (op->getNumResults() != 1)

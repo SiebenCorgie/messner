@@ -10,8 +10,11 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Typing/FixPointTypeChecker.h"
 
 #include "llvm/Support/Debug.h"
+
+#include <mlir/IR/Types.h>
 
 using namespace mlir;
 using namespace mlir::ekl;
@@ -37,7 +40,7 @@ struct TypeCheckPass : ekl::impl::TypeCheckBase<TypeCheckPass> {
 };
 
 } // namespace
-
+/*
 //===----------------------------------------------------------------------===//
 // TypeChecker implementation
 //===----------------------------------------------------------------------===//
@@ -149,12 +152,14 @@ void TypeChecker::applyToIR(RewriterBase::Listener *listener)
     }
     m_context.clear();
 }
-
+*/
 LogicalResult mlir::ekl::typeCheck(Operation *root)
 {
     assert(root);
 
-    TypeChecker typeChecker;
+    mlir::Typing::FixPointTypeChecker typeChecker(
+        root,
+        mlir::Typing::FixPointTypeChecker::kNoLimit);
 
     // Put the kernel on the diagnostic stack.
     ScopedDiagnosticHandler kernelNote(
@@ -166,9 +171,9 @@ LogicalResult mlir::ekl::typeCheck(Operation *root)
         });
 
     // Work is initialized by recursively invalidating all expressions.
-    typeChecker.recursivelyInvalidate(root);
+    typeChecker.invalidateAll(root);
 
-    return typeChecker.check();
+    return typeChecker.solve(root->getLoc());
 }
 
 //===----------------------------------------------------------------------===//

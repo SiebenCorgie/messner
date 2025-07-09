@@ -69,7 +69,7 @@ struct HasFunctors : TraitBase<ConcreteType, HasFunctors> {
 
     Speculation::Speculatability getSpeculatability()
     {
-        return impl::isFullyTyped(this->getOperation())
+        return isFullyTyped(this->getOperation())
                  ? Speculation::RecursivelySpeculatable
                  : Speculation::NotSpeculatable;
     }

@@ -62,20 +62,23 @@ protected:
             [&](OpBuilder &builder, Location loc, ValueRange operands) {
                 IRMapping mapping;
                 for (unsigned i = 0; i < op->getNumOperands(); ++i) {
-                    operands[i].setType(ExpressionType::get(
-                        rewriter.getContext(),
-                        getScalarType(
-                            llvm::cast<ExpressionType>(op->getOperandTypes()[i])
-                                .getTypeBound())));
+                    operands[i].setType(
+                        ExpressionType::get(
+                            rewriter.getContext(),
+                            getScalarType(
+                                llvm::cast<ExpressionType>(
+                                    op->getOperandTypes()[i])
+                                    .getTypeBound())));
                     mapping.map(op->getOperand(i), operands[i]);
                 }
 
                 auto elOp = builder.insert(op->clone(mapping));
-                elOp->getResult(0).setType(ExpressionType::get(
-                    rewriter.getContext(),
-                    getScalarType(
-                        llvm::cast<ExpressionType>(op->getResultTypes()[0])
-                            .getTypeBound())));
+                elOp->getResult(0).setType(
+                    ExpressionType::get(
+                        rewriter.getContext(),
+                        getScalarType(
+                            llvm::cast<ExpressionType>(op->getResultTypes()[0])
+                                .getTypeBound())));
                 builder.create<YieldOp>(loc, elOp->getResult(0));
             },
             resultTy);
@@ -89,7 +92,7 @@ struct ImplementBroadcast : OpRewritePattern<BroadcastOp> {
     LogicalResult
     matchAndRewrite(BroadcastOp op, PatternRewriter &rewriter) const final
     {
-        if (!op.isFullyTyped()) return failure();
+        if (!mlir::ekl::isFullyTyped(op)) return failure();
 
         auto inExtents = *getExtents(op.getOperand().getType().getTypeBound());
         auto elTy = getScalarType(op.getOperand().getType().getTypeBound());
@@ -173,7 +176,7 @@ struct ImplementChoice : OpRewritePattern<ChoiceOp> {
     LogicalResult
     matchAndRewrite(ChoiceOp op, PatternRewriter &rewriter) const final
     {
-        if (!op.isFullyTyped()) return failure();
+        if (!mlir::ekl::isFullyTyped(op)) return failure();
         const auto selectorTy = llvm::dyn_cast<ekl::ArrayType>(
             op.getSelector().getType().getTypeBound());
         if (!selectorTy) return failure();
@@ -228,7 +231,7 @@ struct InlineAssoc : OpRewritePattern<SubscriptOp> {
     LogicalResult
     matchAndRewrite(SubscriptOp op, PatternRewriter &rewriter) const final
     {
-        if (!op.isFullyTyped()
+        if (!mlir::ekl::isFullyTyped(op)
             || !llvm::isa<ScalarType>(op.getResult().getType().getTypeBound()))
             return failure();
         auto subexpr = op.getArray().getDefiningOp<AssocOp>();

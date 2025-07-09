@@ -142,7 +142,11 @@ BroadcastResult mlir::ekl::broadcast(MutableArrayRef<Type> types)
 bool mlir::ekl::canCoerce(Type from, Type to)
 {
     // Upcasting (unifcation) is trivial.
-    if (isSubtype(from, to)) return true;
+    if (Typing::MLIRTypeChecker()
+            .getTypeSystem(&from.getDialect())
+            .isSubtype(from, to))
+        return true;
+    // if (isSubtype(from, to)) return true;
 
     // Can coerce any number type to any other number type.
     if (llvm::isa<NumericType>(from) && llvm::isa<NumericType>(to)) return true;

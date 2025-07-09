@@ -15,11 +15,15 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Typing/FixPointTypeChecker.h"
 
 #include "llvm/Support/Debug.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/LogicalResult.h>
+#include <mlir/IR/TypeSystem.h>
+#include <mlir/IR/Types.h>
+#include <mlir/Typing/TypeChecker.h>
 
 using namespace mlir;
 using namespace mlir::ekl;
@@ -98,7 +102,11 @@ protected:
                 if (operand.getDefiningOp<LiteralOp>()) continue;
                 return failure();
             }
-            if (!result || isSubtype(result, scalarTy)) result = scalarTy;
+            if (!result
+                || Typing::MLIRTypeChecker()
+                       .getTypeSystem(op->getDialect())
+                       .isSubtype(result, scalarTy))
+                result = scalarTy;
         }
         return result;
     }
@@ -122,7 +130,10 @@ struct DecayLiteralArithmetic
             return failure();
 
         // Propagate the type update to users.
-        TypeChecker typeChecker;
+        Typing::FixPointTypeChecker typeChecker(
+            op,
+            Typing::FixPointTypeChecker::kNoLimit);
+        /*
         auto ok = typeChecker.refineBound(
             llvm::cast<Expression>(op->getResult(0)),
             llvm::cast<ArithmeticType>(getTypeBound(op->getResult(0)))
@@ -131,6 +142,8 @@ struct DecayLiteralArithmetic
         ok = typeChecker.check();
         assert(succeeded(ok));
         return success();
+        */
+        return typeChecker.solve(op->getLoc());
     }
 };
 

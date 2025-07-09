@@ -7,7 +7,12 @@
 
 #include "messner/Dialect/EKL/IR/TypeUtils.h"
 #include "messner/Dialect/EKL/IR/Types.h"
+#include "mlir/IR/TypeSupport.h"
+#include "mlir/Typing/Context.h"
 #include "mlir/Typing/TypeChecker.h"
+
+#include <mlir/IR/TypeSystem.h>
+#include <mlir/IR/Types.h>
 
 namespace mlir::ekl {
 
@@ -29,8 +34,14 @@ namespace mlir::ekl {
 inline FailureOr<Type> unify(Type lhs, Type rhs)
 {
     if (!lhs || !rhs) return Type{};
-    if (isSubtype(lhs, rhs)) return rhs;
-    if (isSubtype(rhs, lhs)) return lhs;
+    if (Typing::MLIRTypeChecker()
+            .getTypeSystem(&lhs.getDialect())
+            .isSubtype(lhs, rhs))
+        return rhs;
+    if (Typing::MLIRTypeChecker()
+            .getTypeSystem(&rhs.getDialect())
+            .isSubtype(rhs, lhs))
+        return lhs;
     return failure();
 }
 
