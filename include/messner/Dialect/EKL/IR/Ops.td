@@ -551,20 +551,19 @@ class EKL_ExpressionBase<string mnemonic, list<Trait> traits = []>
     }];
 
     code extraClassDeclaration = [{
-    /*FIXME
+    
         //===--------------------------------------------------------------===//
         // ConditionallySpeculatable
         //===--------------------------------------------------------------===//
 
         Speculation::Speculatability getSpeculatability()
         {
-            std::printf("Oh no, I'm broken\n");
-            return Speculation::NotSpeculatable;
-            // Only speculatable if fully typed.
-            //return isFullyTyped() ? Speculation::Speculatable
-            //                      : Speculation::NotSpeculatable;
+            // Speculation is not allowed until UB can be excluded.
+            return mlir::ekl::isFullyTyped(getOperation())
+                ? Speculation::Speculatable
+                : Speculation::NotSpeculatable;
         }
-    */
+    
     }];
 }
 
@@ -656,7 +655,11 @@ def EKL_GetStaticOp : EKL_ExpressionBase<
 
 def EKL_SubscriptOp : EKL_ExpressionBase<
         "subscript",
-        [NoMemoryEffect, DeclareOpInterfaceMethods<ConditionallySpeculatable>]> {
+        [
+            NoMemoryEffect, 
+            //FIXME: is it okay to be removed?
+            //DeclareOpInterfaceMethods<ConditionallySpeculatable>
+        ]> {
     let summary = "Subscript operator";
     let description = [{
         The `ekl.subscript` operator derives a value from an input array using
@@ -1181,13 +1184,14 @@ class EKL_CastBase<string name, list<Trait> traits = []>
             // The cast target type must be known.
             return !!llvm::cast<ExpressionType>(outputs[0]).getTypeBound();
         }
-    /*FIXME
+    
         //===--------------------------------------------------------------===//
         // ConditionallySpeculatable
         //===--------------------------------------------------------------===//
 
         Speculation::Speculatability getSpeculatability()
         {
+            //FIXME Berg
             // Only speculatable if fully typed.
             std::printf("Oh no, I'm broken\n");
             return Speculation::NotSpeculatable;
@@ -1195,7 +1199,7 @@ class EKL_CastBase<string name, list<Trait> traits = []>
             //return isFullyTyped() ? Speculation::Speculatable
             //                      : Speculation::NotSpeculatable;
         }
-    */
+    
     }];
 }
 
@@ -1282,13 +1286,14 @@ def EKL_BroadcastOp : EKL_CastBase<"broadcast"> {
             // This is decided by the type checker.
             return true;
         }
-        /*FIXME
+        
         //===--------------------------------------------------------------===//
         // ConditionallySpeculatable
         //===--------------------------------------------------------------===//
 
         Speculation::Speculatability getSpeculatability()
         {
+            //FIXME Rolf
             // Only speculatable if fully typed.
             std::printf("Oh no, I'm broken\n");
             return Speculation::NotSpeculatable;
@@ -1296,7 +1301,7 @@ def EKL_BroadcastOp : EKL_CastBase<"broadcast"> {
             //return isFullyTyped() ? Speculation::Speculatable
             //                      : Speculation::NotSpeculatable;
         }
-        */
+        
     }];
 }
 

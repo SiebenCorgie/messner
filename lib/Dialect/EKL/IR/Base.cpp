@@ -14,6 +14,8 @@
 
 #include "llvm/ADT/TypeSwitch.h"
 
+#include <mlir/Typing/TypeChecker.h>
+
 using namespace mlir;
 using namespace mlir::ekl;
 
@@ -71,7 +73,9 @@ Operation *EKLDialect::materializeConstant(
     // LiteralOp only materializes expression values.
     if (const auto exprTy = llvm::dyn_cast<ExpressionType>(type)) {
         if (const auto literalAttr = llvm::dyn_cast<LiteralAttr>(attr)) {
-            if (!isSubtype(literalAttr.getType(), exprTy.getTypeBound()))
+            if (!mlir::Typing::MLIRTypeChecker()
+                     .getTypeSystem(&literalAttr.getDialect())
+                     .isSubtype(literalAttr.getType(), exprTy.getTypeBound()))
                 return nullptr;
 
             return builder.create<LiteralOp>(

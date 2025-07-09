@@ -13,6 +13,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 #include <bit>
+#include <mlir/Typing/TypeChecker.h>
 
 using namespace mlir;
 using namespace mlir::ekl;
@@ -81,7 +82,9 @@ LogicalResult ekl::ArrayAttr::verify(
 
     // The element type must be a subtype of the declared type.
     const auto verifyType = [&](Type type) -> LogicalResult {
-        if (!isSubtype(type, arrayType.getScalarType())) {
+        if (!mlir::Typing::MLIRTypeChecker()
+                 .getTypeSystem(&type.getDialect())
+                 .isSubtype(type, arrayType.getScalarType())) {
             auto diag = emitError() << "type mismatch";
             diag.attachNote()
                 << type << " is not a subtype of " << arrayType.getScalarType();

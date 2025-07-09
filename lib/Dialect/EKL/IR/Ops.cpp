@@ -556,7 +556,9 @@ LogicalResult StaticOp::verify()
         // If an initializer was provided, it must be valid.
         if (!isOwned())
             return emitOpError() << "can't initialize imported value";
-        if (!isSubtype(initializer.getType(), getDataType())) {
+        if (!mlir::Typing::MLIRTypeChecker()
+                 .getTypeSystem(&initializer.getDialect())
+                 .isSubtype(initializer.getType(), getDataType())) {
             auto diag = emitOpError() << "initializer type mismatch: ";
             diag << initializer.getType() << " can't initialize value of type ";
             diag << getDataType();
@@ -675,7 +677,9 @@ LogicalResult WriteOp::typeCheck(AbstractTypeChecker &typeChecker)
         return contra;
 
     // The broadcasted type must be a subtype of the reference array type.
-    if (!isSubtype(storeTy, refTy.getArrayType())) {
+    if (!mlir::Typing::MLIRTypeChecker()
+             .getTypeSystem(&storeTy.getDialect())
+             .isSubtype(storeTy, refTy.getArrayType())) {
         auto diag = emitOpError() << "can't store value of type " << storeTy
                                   << " in a " << refTy;
         return diag;
@@ -820,7 +824,9 @@ Expression IfOp::getElseExpression()
 
 LogicalResult LiteralOp::verify()
 {
-    if (!isSubtype(getValue().getType(), getType().getTypeBound()))
+    if (!mlir::Typing::MLIRTypeChecker()
+             .getTypeSystem(getOperation())
+             .isSubtype(getValue().getType(), getType().getTypeBound()))
         return emitOpError()
             << getType().getTypeBound() << " is not a supertype of "
             << getValue().getType();
@@ -859,7 +865,9 @@ LogicalResult GetStaticOp::verifySymbolUses(SymbolTableCollection &symbolTable)
         return diag;
     }
 
-    if (!isSubtype(getType().getTypeBound(), staticOp.getType())) {
+    if (!mlir::Typing::MLIRTypeChecker()
+             .getTypeSystem(getOperation())
+             .isSubtype(getType().getTypeBound(), staticOp.getType())) {
         auto diag = emitOpError()
                  << getType().getTypeBound() << " is not a subtype of "
                  << staticOp.getType();
