@@ -95,6 +95,7 @@ def EKL_FuncOp : EKL_SymbolBase<
             EKL_SemaOpInterface,
             DeclareOpInterfaceMethods<EKL_SemaOpInterface, ["checkSemantics"]>,
             FunctionOpInterface,
+            DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>,
             OpAsmOpInterface]> {
     let summary = "Introduces a function";
     let description = [{
@@ -404,7 +405,7 @@ class EKL_ExpressionBase<string mnemonic, list<Trait> traits = []>
         : EKL_Op<mnemonic, [EKL_Expression] # traits> {
     let arguments = (ins Variadic<AnyType>:$operands);
     let results = (outs AnyType:$result);
-
+    /*
     let builders = [
         OpBuilder<(ins
                 "ValueRange":$operands,
@@ -418,13 +419,6 @@ class EKL_ExpressionBase<string mnemonic, list<Trait> traits = []>
         custom<Operands>($operands, type($operands))
         attr-dict
         custom<Result>(type($result))
-    }];
-
-    /*
-    let assemblyFormat = [{
-        custom<OperandList>($operands, type($operands))
-        attr-dict
-        custom<ResultType>(type($result))
     }];
     */
 }
@@ -607,26 +601,7 @@ class EKL_UnaryOperator<string name, list<Trait> traits = []>
 
 class EKL_BinaryOperator<string name, list<Trait> traits = []>
         : EKL_Operator<name, traits> {
-    let arguments = (ins EKL_ExpressionType:$lhs, EKL_ExpressionType:$rhs);
-    let builders = [
-        OpBuilder<(ins
-                "Value":$lhs,
-                "Value":$rhs,
-                CArg<"Type", "{}">:$resultBound), [{
-            $_state.addOperands({lhs, rhs});
-            $_state.addTypes({ExpressionType::get($_builder.getContext(), resultBound)});
-        }]>];
-    let skipDefaultBuilders = 1;
-
-    
-    let assemblyFormat = [{
-        custom<Operand>($lhs, type($lhs))```,`
-        custom<Operand>($rhs, type($rhs))
-        attr-dict
-        custom<Result>(type($result))
-    }];
-    
-    
+    let arguments = (ins AnyType:$lhs, AnyType:$rhs);    
 }
 
 def EKL_MinOp : EKL_BinaryOperator<"min", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{

@@ -8,7 +8,9 @@
 #include "messner/Dialect/EKL/IR/Dialect.h"
 #include "messner/Dialect/Ref/IR/Dialect.h"
 
+#include <cstdio>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/Transforms/Passes.h>
 
 namespace messner {
 
@@ -23,7 +25,10 @@ inline void registerAllDialects(mlir::DialectRegistry &registry)
 inline void registerAllExtensions(mlir::DialectRegistry &) {}
 
 /// Registers all passes added by messner at @p registry .
-inline void registerAllPasses(mlir::DialectRegistry &) {}
+inline void registerAllPasses(mlir::DialectRegistry &)
+{
+    mlir::registerTypeCheckPass();
+}
 
 /// Registers all translations added by messner at @p registry .
 inline void registerAllTranslations(mlir::DialectRegistry &) {}

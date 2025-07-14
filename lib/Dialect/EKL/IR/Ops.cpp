@@ -7,8 +7,11 @@
 
 #include "messner/Dialect/EKL/IR/Dialect.h"
 
+#include <cstdio>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/OpImplementation.h>
+#include <mlir/Typing/Bound.h>
 #include <mlir/Typing/Contradiction.h>
 #include <mlir/Typing/TypeChecker.h>
 #include <optional>
@@ -81,6 +84,13 @@ auto FuncOp::verifyRegions() -> LogicalResult
     }
 
     return success();
+}
+
+auto FuncOp::typeCheck(Typing::AbstractTypeChecker &typeChecker)
+    -> std::optional<Typing::Contradiction>
+{
+    std::printf("FnBing\n");
+    return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//
@@ -231,7 +241,51 @@ auto CoerceOp::fold(FoldAdaptor) -> OpFoldResult
     // TODO: Implement.
     return {};
 }
+/*
+//===----------------------------------------------------------------------===//
+// Arithmetic operator implementation
+//===----------------------------------------------------------------------===//
 
+static std::optional<Typing::Contradiction> typeCheckArithmeticOp(
+    Operation *op,
+    ::mlir::Typing::AbstractTypeChecker &typeChecker,
+    function_ref<uint64_t(ArrayRef<uint64_t>)> combineIndexBounds)
+{
+    // The operands must all unify or broadcast together.
+    ArithmeticType unifiedTy;
+
+    if (auto contra = adaptor.broadcastAndUnify(
+            adaptor.getParent()->getOperands(),
+            unifiedTy,
+            "arithmetic type"))
+        return contra;
+
+    // Arithmetic operations need to properly update the upper bounds on the
+    // types of index values they produce.
+    if (llvm::isa<ekl::IndexType>(unifiedTy.getScalarType())) {
+        const auto operandUpperBounds = llvm::to_vector(
+            llvm::map_range(
+                adaptor.getParent()->getOperands(),
+                [&](Value operand) {
+                    return llvm::cast<ekl::IndexType>(
+                               getScalarType(adaptor.getType(
+                                   llvm::cast<Expression>(operand))))
+                        .getUpperBound();
+                }));
+        return adaptor.refineBound(
+            llvm::cast<Expression>(adaptor.getParent()->getResult(0)),
+            unifiedTy.cloneWith(
+                ekl::IndexType::get(
+                    unifiedTy.getContext(),
+                    combineIndexBounds(operandUpperBounds))));
+    }
+
+    // The result type is the unified type.
+    return adaptor.refineBound(
+        llvm::cast<Expression>(adaptor.getParent()->getResult(0)),
+        unifiedTy);
+}
+*/
 //===----------------------------------------------------------------------===//
 // MinOp implementation
 //===----------------------------------------------------------------------===//
@@ -245,7 +299,34 @@ auto MinOp::fold(FoldAdaptor) -> OpFoldResult
 std::optional<Typing::Contradiction>
 MinOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
 {
-    // return typeChecker.fatal(getOperation()->getLoc());
+
+    auto lhs          = getLhs();
+    auto rhs          = getRhs();
+    auto result       = getResult();
+    auto result_bound = typeChecker.get(result);
+
+    // llvm::dbgs() << "Result bound: " << result_bound << "\n";
+
+    // try to meet the bounds of the result for both sides
+    auto mlhs = typeChecker.meet(lhs, result.getType());
+    auto mrhs = typeChecker.meet(rhs, result.getType());
+
+    // lhs is not within result's bounds
+    if (auto maybeContra = mlhs.toContra()) {
+        std::printf("Could not meet result + lhs");
+        maybeContra->attachNote(getLoc());
+        maybeContra->append("here");
+        return maybeContra;
+    }
+    // rhs is not within result's bounds
+    if (auto maybeContra = mrhs.toContra()) {
+        std::printf("Could not meet result + rhs");
+        maybeContra->attachNote(getLoc());
+        maybeContra->append(" here");
+        return maybeContra;
+    }
+
+    // Otherwise we refined _something_
     return std::nullopt;
 }
 
