@@ -9,6 +9,9 @@
 
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/OpImplementation.h>
+#include <mlir/Typing/Contradiction.h>
+#include <mlir/Typing/TypeChecker.h>
+#include <optional>
 
 using namespace mlir;
 using namespace mlir::ekl;
@@ -227,6 +230,23 @@ auto CoerceOp::fold(FoldAdaptor) -> OpFoldResult
 {
     // TODO: Implement.
     return {};
+}
+
+//===----------------------------------------------------------------------===//
+// MinOp implementation
+//===----------------------------------------------------------------------===//
+
+auto MinOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+std::optional<Typing::Contradiction>
+MinOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
+{
+    // return typeChecker.fatal(getOperation()->getLoc());
+    return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//

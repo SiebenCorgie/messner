@@ -14,6 +14,7 @@ include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
+include "mlir/Typing/TypeCheckOpInterface.td"
 
 //===----------------------------------------------------------------------===//
 // Containers
@@ -404,11 +405,28 @@ class EKL_ExpressionBase<string mnemonic, list<Trait> traits = []>
     let arguments = (ins Variadic<AnyType>:$operands);
     let results = (outs AnyType:$result);
 
+    let builders = [
+        OpBuilder<(ins
+                "ValueRange":$operands,
+                CArg<"Type", "{}">:$resultBound), [{
+            $_state.addOperands({operands});
+            $_state.addTypes({AnyType::get($_builder.getContext(), resultBound)});
+        }]>];
+    let skipDefaultBuilders = 1;
+
+    let assemblyFormat = [{
+        custom<Operands>($operands, type($operands))
+        attr-dict
+        custom<Result>(type($result))
+    }];
+
+    /*
     let assemblyFormat = [{
         custom<OperandList>($operands, type($operands))
         attr-dict
         custom<ResultType>(type($result))
     }];
+    */
 }
 
 // SubscriptOp
@@ -558,9 +576,63 @@ def EKL_CoerceOp : EKL_CastBase<"coerce"> {
     }];
 }
 
+
 //===----------------------------------------------------------------------===//
 // Operators
 //===----------------------------------------------------------------------===//
+
+class EKL_Operator<string name, list<Trait> traits = []>
+        : EKL_ExpressionBase<name, [NoMemoryEffect] # traits> {
+}
+
+class EKL_UnaryOperator<string name, list<Trait> traits = []>
+        : EKL_Operator<name, traits> {
+    let arguments = (ins EKL_ExpressionType:$operand);
+    let builders = [
+        OpBuilder<(ins
+                "Value":$operand,
+                CArg<"Type", "{}">:$resultBound), [{
+            $_state.addOperands({operand});
+            $_state.addTypes({ExpressionType::get($_builder.getContext(), resultBound)});
+        }]>];
+    let skipDefaultBuilders = 1;
+    /*
+        let assemblyFormat = [{
+        custom<Operand>($operand, type($operand))
+        attr-dict
+        custom<Result>(type($result))
+    }];
+    */
+}
+
+class EKL_BinaryOperator<string name, list<Trait> traits = []>
+        : EKL_Operator<name, traits> {
+    let arguments = (ins EKL_ExpressionType:$lhs, EKL_ExpressionType:$rhs);
+    let builders = [
+        OpBuilder<(ins
+                "Value":$lhs,
+                "Value":$rhs,
+                CArg<"Type", "{}">:$resultBound), [{
+            $_state.addOperands({lhs, rhs});
+            $_state.addTypes({ExpressionType::get($_builder.getContext(), resultBound)});
+        }]>];
+    let skipDefaultBuilders = 1;
+
+    
+    let assemblyFormat = [{
+        custom<Operand>($lhs, type($lhs))```,`
+        custom<Operand>($rhs, type($rhs))
+        attr-dict
+        custom<Result>(type($result))
+    }];
+    
+    
+}
+
+def EKL_MinOp : EKL_BinaryOperator<"min", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
+    let summary = "Minimum Operator";
+    let hasFolder = 1;
+}
 
 // CompareOp
 // MinOp
