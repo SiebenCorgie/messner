@@ -35,6 +35,59 @@ using namespace mlir::ekl;
 
 //===----------------------------------------------------------------------===//
 
+/// Tries to broadcast the op's operand shape to a common shape that is also
+/// compatible to the op's result.
+std::optional<Typing::Contradiction> broadcastAndPromote(
+    Operation *op,
+    Typing::AbstractTypeChecker &typeChecker,
+    Type &result)
+{
+
+    auto opTypes = op->getOperandTypes();
+    auto shapes =
+        llvm::to_vector(llvm::map_range(op->getOperands(), [&](auto op) {
+            BroadcastType ty =
+                llvm::dyn_cast_if_present<BroadcastType>(op.getType());
+            assert(ty); // NOTE: assume that worked
+            return ty.getShape();
+        }));
+
+    // FIXME(tendsin): Because I can't figure out a fold on the iterator,
+    // above, init with first result then broadcast all shapes. Whenever
+    // we encounter an _error_ return.
+    Shape broadcasted = llvm::to_vector(shapes.front());
+    for (auto next_shape : shapes) {
+        auto ir = broadcast(next_shape, broadcasted);
+        if (failed(ir)) {
+            auto f = typeChecker.fatal(op->getLoc());
+            f << "Invalid type shape combination: (";
+            for (auto t : opTypes) f << t << " ";
+            f << ") -> " << op->getResult(0).getType();
+            return f;
+        }
+        broadcasted = ir.value();
+    }
+
+    // At this point shapes match, continue by trying to promote everything
+    // i.e. tho old _unify_ stage
+
+    auto optys = llvm::to_vector(op->getOperandTypes());
+    assert(optys.size() == 2);
+
+    // NOTE(tendsin): For some reason this triggers the default-type-constructor
+    // assert in reduce-pairwise, but I can't find out why :/.
+    // TODO: Reduce pairwise till we reach one common, unified type.
+    //  typeChecker.getTypeSystem(op).promote(optys);
+    auto unified = typeChecker.getTypeSystem(op).promote(optys[0], optys[1]);
+    if (!unified) {
+        auto f = typeChecker.fatal(op->getLoc());
+        f << "Could not promote to unified type";
+        return f;
+    }
+    result = unified;
+    return std::nullopt;
+}
+
 //===----------------------------------------------------------------------===//
 // ProgramOp implementation
 //===----------------------------------------------------------------------===//
@@ -245,6 +298,127 @@ auto CoerceOp::fold(FoldAdaptor) -> OpFoldResult
 }
 
 //===----------------------------------------------------------------------===//
+// Compare operator implementation
+//===----------------------------------------------------------------------===//
+
+auto CompareOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+std::optional<Typing::Contradiction>
+CompareOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
+{
+    BroadcastType unifiedTy;
+    if (auto contra =
+            broadcastAndPromote(getOperation(), typeChecker, unifiedTy)) {
+        return contra;
+    }
+
+    if (!llvm::isa<NumberType>(unifiedTy.getScalarType())) {
+        switch (getKind()) {
+        case RelationKind::Equivalent:
+        case RelationKind::Antivalent:
+            if (llvm::isa<BoolType>(unifiedTy.getScalarType())) {
+                // Equivalence/Antivalence of booleans is also well-defined.
+                break;
+            }
+            [[fallthrough]];
+
+        default:
+            auto f = typeChecker.fatal(getLoc());
+            f << "can't relate values of type " << unifiedTy;
+            return f;
+        }
+    }
+
+    // We did meet the requirements (i.e. broadcast+met input types with a well
+    // defined numeric unified type.) therefore just set the result to bool with
+    // the same shape.
+    auto result = typeChecker.meet(
+        getResult(),
+        unifiedTy.cloneWith(BoolType::get(getContext())));
+    if (auto contra = result.toContra()) {
+        contra->attachNote(getLoc());
+        return contra;
+    } else
+        return std::nullopt;
+}
+
+//===----------------------------------------------------------------------===//
+// Logical operator implementation
+//===----------------------------------------------------------------------===//
+
+static std::optional<Typing::Contradiction>
+typeCheckLogicalOp(Operation *op, Typing::AbstractTypeChecker &typeChecker)
+{
+
+    LogicType unifiedTy;
+    if (auto contra = broadcastAndPromote(op, typeChecker, unifiedTy))
+        return contra;
+
+    // The result type is the unified type, decayed to a scalar.
+    if (auto result = typeChecker.meet(op->getResult(0), unifiedTy)) {
+        if (auto contra = result.toContra()) {
+            // failed to meet unified
+            return contra;
+        } else {
+            return std::nullopt;
+        }
+    } else {
+        auto f = typeChecker.fatal(op->getLoc());
+        f << "Could not deduce type";
+        return f;
+    }
+}
+
+auto LogicalNotOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+std::optional<Typing::Contradiction>
+LogicalNotOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
+{
+    // NOTE(tendsin): I think this should be trivial? I.e. a single operand that
+    // either meets the result's
+    //                requirement, or not
+    assert(getOperation()->getOperands().size() == 1);
+    auto result = typeChecker.meet(getResult(), typeChecker.get(getOperand()));
+    if (auto contra = result.toContra()) {
+        contra->attachNote(getLoc());
+        return contra;
+    } else
+        return std::nullopt;
+}
+
+auto LogicalOrOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+std::optional<Typing::Contradiction>
+LogicalOrOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
+{
+    return typeCheckLogicalOp(getOperation(), typeChecker);
+}
+
+auto LogicalAndOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+std::optional<Typing::Contradiction>
+LogicalAndOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
+{
+    return typeCheckLogicalOp(getOperation(), typeChecker);
+}
+
+//===----------------------------------------------------------------------===//
 // Arithmetic operator implementation
 //===----------------------------------------------------------------------===//
 
@@ -254,59 +428,29 @@ static std::optional<Typing::Contradiction> typeCheckArithmeticOp(
     function_ref<Extent(ArrayRef<Extent>)> combineIndexBounds)
 {
 
-    auto opTypes = op->getOperandTypes();
+    ArithmeticType unifiedTy;
+    if (auto contra = broadcastAndPromote(op, typeChecker, unifiedTy))
+        return contra;
 
-    auto shapes =
-        llvm::to_vector(llvm::map_range(op->getOperands(), [&](auto op) {
-            BroadcastType ty =
-                llvm::dyn_cast_if_present<BroadcastType>(op.getType());
-            assert(ty); // NOTE: assume that worked
-            return ty.getShape();
-        }));
-
-    // FIXME(tendsin): Because I can't figure out a fold on the iterator,
-    // above, init with first result then broadcast all shapes. Whenever
-    // we encounter an _error_ return.
-    Shape broadcasted = llvm::to_vector(shapes.front());
-    for (auto next_shape : shapes) {
-        auto ir = broadcast(next_shape, broadcasted);
-        if (failed(ir)) {
-            auto f = typeChecker.fatal(op->getLoc());
-            f << "Invalid type shape combination: (";
-            for (auto t : opTypes) f << t << " ";
-            f << ") -> " << op->getResult(0).getType();
-            return f;
-        }
-        broadcasted = ir.value();
-    }
-
-    // At this point shapes match, continue by trying to promote everything
-    // i.e. tho old _unify_ stage
-
-    auto optys = llvm::to_vector(op->getOperandTypes());
-    assert(optys.size() == 2);
-
-    // Try to promote both
-    // NOTE: For some reason this triggers the default-type-constructor assert
-    // in reduce-pairwise :/
-    //  typeChecker.getTypeSystem(op).promote(optys);
-    auto unified = typeChecker.getTypeSystem(op).promote(optys[0], optys[1]);
-
-    if (unified == Type{}) {
+    if (unifiedTy == Type{}) {
         auto f = typeChecker.fatal(op->getLoc());
-        f << "Could not resolve " << optys[0] << " & " << optys[1]
-          << " to common result type";
+        f << "Could not resolve to common result type";
         return f;
     }
 
     // Arithmetic operations need to properly update the upper bounds on the
     // types of index values they produce.
-    if (llvm::isa<ekl::IndexType>(unified)) {
+    if (llvm::isa<ekl::IndexType>(unifiedTy)) {
         // Flatten each shape into an extent, then use the λ to come up with a
         // unified bound. Finally obtain the IndexType with such an extent and
         // tell the type checker.
         auto shape_extents =
-            llvm::to_vector(llvm::map_range(shapes, [&](auto shape) {
+            llvm::to_vector(llvm::map_range(op->getOperands(), [&](auto op) {
+                BroadcastType ty =
+                    llvm::dyn_cast_if_present<BroadcastType>(op.getType());
+                assert(ty); // NOTE: assume that worked
+                auto shape     = ty.getShape();
+                // Flatten the shape into one extent
                 auto flattened = flatten(shape);
                 assert(llvm::succeeded(flattened)); // Assume this works atm.
                 return flattened.value();
@@ -315,12 +459,12 @@ static std::optional<Typing::Contradiction> typeCheckArithmeticOp(
         auto combined_bound = combineIndexBounds(shape_extents);
         // FIXME(tendsin): isFromEnd not considered atm.
         auto unified_index_ty =
-            ekl::IndexType::get(unified.getContext(), combined_bound, false);
+            ekl::IndexType::get(unifiedTy.getContext(), combined_bound, false);
         auto mresult = typeChecker.meet(op->getResult(0), unified_index_ty);
     }
 
     // Finally meet the unified type.
-    if (auto result = typeChecker.meet(op->getResult(0), unified)) {
+    if (auto result = typeChecker.meet(op->getResult(0), unifiedTy)) {
         if (auto contra = result.toContra()) {
             // failed to meet unified
             return contra;

@@ -601,10 +601,50 @@ def EKL_MaxOp : EKL_BinaryOperator<"max", [DeclareOpInterfaceMethods<TypeCheckOp
 }
 
 // CompareOp
+def EKL_CompareOp : EKL_BinaryOperator<"cmp", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]> {
+    let summary = "Comparison operator";
+    let arguments = (ins
+        EKL_RelationKind:$kind,
+        AnyType:$lhs,
+        AnyType:$rhs);
+    /*
+        let builders = [
+        OpBuilder<(ins
+                "RelationKind":$kind,
+                "Value":$lhs,
+                "Value":$rhs,
+                CArg<"Type", "{}">:$resultBound)>];
+    let skipDefaultBuilders = 1;
+    */
+    let hasFolder = 1;
+    /*
+    let hasCanonicalizer = 1;
+
+    let assemblyFormat = [{
+        $kind
+        custom<Operand>($lhs, type($lhs))```,`
+        custom<Operand>($rhs, type($rhs))
+        attr-dict
+        custom<Result>(type($result))
+    }];
+    */
+}
 
 // LogicalNotOp
+def EKL_LogicalNotOp : EKL_UnaryOperator<"lnot", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
+    let summary = "Logic Not Operator";
+    let hasFolder = 1;
+}
 // LogicalOrOp
+def EKL_LogicalOrOp : EKL_BinaryOperator<"lor", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
+    let summary = "Logic OR Operator";
+    let hasFolder = 1;
+}
 // LogicalAndOp
+def EKL_LogicalAndOp : EKL_BinaryOperator<"land", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
+    let summary = "Logic AND Operator";
+    let hasFolder = 1;
+}
 
 // AddOp
 def EKL_AddOp : EKL_BinaryOperator<"add", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
