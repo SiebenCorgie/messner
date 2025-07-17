@@ -3,11 +3,14 @@
 /// @file
 /// @author     Karl F. A. Friebel (karl.friebel@tu-dresden.de)
 
+#include "messner/Dialect/EKL/Analysis/Shape.h"
 #include "messner/Dialect/EKL/IR/Ops.h"
 #include "messner/Dialect/EKL/IR/TypeSystem.h"
 #include "messner/Dialect/EKL/IR/TypeUtils.h"
+#include "messner/Dialect/EKL/IR/Types.h"
 
 #include <cstddef>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Diagnostics.h>
@@ -156,11 +159,41 @@ auto PromoteOp::typeCheck(AbstractTypeChecker &tc)
 // BroadcastOp implementation
 //===----------------------------------------------------------------------===//
 
-auto BroadcastOp::typeCheck(AbstractTypeChecker &)
+auto BroadcastOp::typeCheck(AbstractTypeChecker &tc)
     -> std::optional<Contradiction>
 {
-    // TODO: Implement.
-    return {};
+
+    ArrayType inty = llvm::dyn_cast<ArrayType>(getOperand().getType());
+    auto inshape   = inty.getShape();
+    // Do not broadcast if dimentions don't match.
+    //(also the broadcast call panics otherwise).
+    if (inshape.size() != getResultShape().size()) {
+        auto f = tc.fatal(getLoc());
+        f << "Can not broadcast " << inshape.size() << "D shape to "
+          << getResultShape().size() << "D";
+        return f;
+    }
+
+    // Test whether the input shape broadcasts to the output shape
+    auto result = broadcast(inshape, getResultShape());
+
+    if (failed(result)) {
+        auto f = tc.fatal(getLoc());
+        f << "Can not broadcast from" << getOperand().getType() << " to "
+          << getResult().getType();
+        return f;
+    }
+
+    // Update result type to broadcast shape
+    ArrayType rty      = llvm::dyn_cast<ArrayType>(getResult().getType());
+    auto newResultType = rty.cloneWith(inshape);
+    // tell the tc to meet the broadcasted shape
+    auto meetResult    = tc.meet(getResult(), newResultType);
+
+    if (auto contra = meetResult.toContra())
+        return contra;
+    else
+        return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//
