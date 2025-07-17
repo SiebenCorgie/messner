@@ -95,7 +95,6 @@ def EKL_FuncOp : EKL_SymbolBase<
             EKL_SemaOpInterface,
             DeclareOpInterfaceMethods<EKL_SemaOpInterface, ["checkSemantics"]>,
             FunctionOpInterface,
-            DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>,
             OpAsmOpInterface]> {
     let summary = "Introduces a function";
     let description = [{
@@ -582,21 +581,6 @@ class EKL_Operator<string name, list<Trait> traits = []>
 class EKL_UnaryOperator<string name, list<Trait> traits = []>
         : EKL_Operator<name, traits> {
     let arguments = (ins EKL_ExpressionType:$operand);
-    let builders = [
-        OpBuilder<(ins
-                "Value":$operand,
-                CArg<"Type", "{}">:$resultBound), [{
-            $_state.addOperands({operand});
-            $_state.addTypes({ExpressionType::get($_builder.getContext(), resultBound)});
-        }]>];
-    let skipDefaultBuilders = 1;
-    /*
-        let assemblyFormat = [{
-        custom<Operand>($operand, type($operand))
-        attr-dict
-        custom<Result>(type($result))
-    }];
-    */
 }
 
 class EKL_BinaryOperator<string name, list<Trait> traits = []>
@@ -604,24 +588,53 @@ class EKL_BinaryOperator<string name, list<Trait> traits = []>
     let arguments = (ins AnyType:$lhs, AnyType:$rhs);    
 }
 
+//MinOp
 def EKL_MinOp : EKL_BinaryOperator<"min", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
     let summary = "Minimum Operator";
     let hasFolder = 1;
 }
 
+//MaxOp
+def EKL_MaxOp : EKL_BinaryOperator<"max", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
+    let summary = "Maximum Operator";
+    let hasFolder = 1;
+}
+
 // CompareOp
-// MinOp
-// MaxOp
 
 // LogicalNotOp
 // LogicalOrOp
 // LogicalAndOp
 
 // AddOp
+def EKL_AddOp : EKL_BinaryOperator<"add", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
+    let summary = "Add Operator";
+    let hasFolder = 1;
+}
 // SubtractOp
+def EKL_SubtractOp : EKL_BinaryOperator<"sub", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
+    let summary = "Subtraction Operator";
+    let hasFolder = 1;
+}
 // MultiplyOp
+def EKL_MultiplyOp : EKL_BinaryOperator<"mul", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
+    let summary = "Multiplication Operator";
+    let hasFolder = 1;
+}
 // DivideOp
+def EKL_DivideOp : EKL_BinaryOperator<"div", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
+    let summary = "Division Operator";
+    let hasFolder = 1;
+}
 // RemainderOp
+def EKL_RemainderOp : EKL_BinaryOperator<"rem", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
+    let summary = "Remainder Operator";
+    let hasFolder = 1;
+}
 // PowerOp
+def EKL_PowerOp : EKL_BinaryOperator<"pow", [DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>]>{
+    let summary = "Power Operator";
+    let hasFolder = 1;
+}
 
 #endif // EKL_OPS

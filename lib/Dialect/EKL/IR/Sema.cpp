@@ -7,10 +7,13 @@
 #include "messner/Dialect/EKL/IR/TypeSystem.h"
 #include "messner/Dialect/EKL/IR/TypeUtils.h"
 
+#include <cstddef>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/Typing/Contradiction.h>
 #include <mlir/Typing/TypeChecker.h>
+#include <optional>
 
 using namespace mlir;
 using namespace mlir::Typing;
@@ -125,10 +128,28 @@ auto YieldOp::typeCheck(AbstractTypeChecker &typeChecker)
 // PromoteOp implementation
 //===----------------------------------------------------------------------===//
 
-auto PromoteOp::typeCheck(AbstractTypeChecker &) -> std::optional<Contradiction>
+auto PromoteOp::typeCheck(AbstractTypeChecker &tc)
+    -> std::optional<Contradiction>
 {
-    // TODO: Implement.
-    return {};
+    auto input  = getOperand();
+    auto tin    = tc.get(input);
+    auto output = getResult();
+    auto tout   = tc.get(output);
+
+    // Is already equal
+    if (tin == tout) return std::nullopt;
+
+    // Try to promote
+    auto promotion = tc.getTypeSystem(getOperation()).promote(tin, tout);
+
+    if (promotion == NULL) {
+        // failed make this fatal for now
+        auto f = tc.fatal(getLoc());
+        f << "Can not promote from " << tin << " to " << tout;
+        return f;
+    }
+
+    return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//

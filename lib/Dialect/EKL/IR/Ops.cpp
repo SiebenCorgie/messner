@@ -5,12 +5,21 @@
 
 #include "messner/Dialect/EKL/IR/Ops.h"
 
+#include "messner/Dialect/EKL/Analysis/Extent.h"
+#include "messner/Dialect/EKL/Analysis/Shape.h"
 #include "messner/Dialect/EKL/IR/Dialect.h"
+#include "messner/Dialect/EKL/IR/TypeSystem.h"
+#include "messner/Dialect/EKL/IR/Types.h"
 
+#include <cstddef>
 #include <cstdio>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/OpImplementation.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Typing/Bound.h>
 #include <mlir/Typing/Contradiction.h>
 #include <mlir/Typing/TypeChecker.h>
@@ -84,13 +93,6 @@ auto FuncOp::verifyRegions() -> LogicalResult
     }
 
     return success();
-}
-
-auto FuncOp::typeCheck(Typing::AbstractTypeChecker &typeChecker)
-    -> std::optional<Typing::Contradiction>
-{
-    std::printf("FnBing\n");
-    return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//
@@ -241,7 +243,7 @@ auto CoerceOp::fold(FoldAdaptor) -> OpFoldResult
     // TODO: Implement.
     return {};
 }
-/*
+
 //===----------------------------------------------------------------------===//
 // Arithmetic operator implementation
 //===----------------------------------------------------------------------===//
@@ -249,43 +251,191 @@ auto CoerceOp::fold(FoldAdaptor) -> OpFoldResult
 static std::optional<Typing::Contradiction> typeCheckArithmeticOp(
     Operation *op,
     ::mlir::Typing::AbstractTypeChecker &typeChecker,
-    function_ref<uint64_t(ArrayRef<uint64_t>)> combineIndexBounds)
+    function_ref<Extent(ArrayRef<Extent>)> combineIndexBounds)
 {
-    // The operands must all unify or broadcast together.
-    ArithmeticType unifiedTy;
 
-    if (auto contra = adaptor.broadcastAndUnify(
-            adaptor.getParent()->getOperands(),
-            unifiedTy,
-            "arithmetic type"))
-        return contra;
+    auto opTypes = op->getOperandTypes();
+
+    auto shapes =
+        llvm::to_vector(llvm::map_range(op->getOperands(), [&](auto op) {
+            BroadcastType ty =
+                llvm::dyn_cast_if_present<BroadcastType>(op.getType());
+            assert(ty); // NOTE: assume that worked
+            return ty.getShape();
+        }));
+
+    // FIXME(tendsin): Because I can't figure out a fold on the iterator,
+    // above, init with first result then broadcast all shapes. Whenever
+    // we encounter an _error_ return.
+    Shape broadcasted = llvm::to_vector(shapes.front());
+    for (auto next_shape : shapes) {
+        auto ir = broadcast(next_shape, broadcasted);
+        if (failed(ir)) {
+            auto f = typeChecker.fatal(op->getLoc());
+            f << "Invalid type shape combination: (";
+            for (auto t : opTypes) f << t << " ";
+            f << ") -> " << op->getResult(0).getType();
+            return f;
+        }
+        broadcasted = ir.value();
+    }
+
+    // At this point shapes match, continue by trying to promote everything
+    // i.e. tho old _unify_ stage
+
+    auto optys = llvm::to_vector(op->getOperandTypes());
+    assert(optys.size() == 2);
+
+    // Try to promote both
+    // NOTE: For some reason this triggers the default-type-constructor assert
+    // in reduce-pairwise :/
+    //  typeChecker.getTypeSystem(op).promote(optys);
+    auto unified = typeChecker.getTypeSystem(op).promote(optys[0], optys[1]);
+
+    if (unified == Type{}) {
+        auto f = typeChecker.fatal(op->getLoc());
+        f << "Could not resolve " << optys[0] << " & " << optys[1]
+          << " to common result type";
+        return f;
+    }
 
     // Arithmetic operations need to properly update the upper bounds on the
     // types of index values they produce.
-    if (llvm::isa<ekl::IndexType>(unifiedTy.getScalarType())) {
-        const auto operandUpperBounds = llvm::to_vector(
-            llvm::map_range(
-                adaptor.getParent()->getOperands(),
-                [&](Value operand) {
-                    return llvm::cast<ekl::IndexType>(
-                               getScalarType(adaptor.getType(
-                                   llvm::cast<Expression>(operand))))
-                        .getUpperBound();
-                }));
-        return adaptor.refineBound(
-            llvm::cast<Expression>(adaptor.getParent()->getResult(0)),
-            unifiedTy.cloneWith(
-                ekl::IndexType::get(
-                    unifiedTy.getContext(),
-                    combineIndexBounds(operandUpperBounds))));
+    if (llvm::isa<ekl::IndexType>(unified)) {
+        // Flatten each shape into an extent, then use the λ to come up with a
+        // unified bound. Finally obtain the IndexType with such an extent and
+        // tell the type checker.
+        auto shape_extents =
+            llvm::to_vector(llvm::map_range(shapes, [&](auto shape) {
+                auto flattened = flatten(shape);
+                assert(llvm::succeeded(flattened)); // Assume this works atm.
+                return flattened.value();
+            }));
+
+        auto combined_bound = combineIndexBounds(shape_extents);
+        // FIXME(tendsin): isFromEnd not considered atm.
+        auto unified_index_ty =
+            ekl::IndexType::get(unified.getContext(), combined_bound, false);
+        auto mresult = typeChecker.meet(op->getResult(0), unified_index_ty);
     }
 
-    // The result type is the unified type.
-    return adaptor.refineBound(
-        llvm::cast<Expression>(adaptor.getParent()->getResult(0)),
-        unifiedTy);
+    // Finally meet the unified type.
+    if (auto result = typeChecker.meet(op->getResult(0), unified)) {
+        if (auto contra = result.toContra()) {
+            // failed to meet unified
+            return contra;
+        } else {
+            return std::nullopt;
+        }
+    } else {
+        auto f = typeChecker.fatal(op->getLoc());
+        f << "Could not deduce type";
+        return f;
+    }
 }
-*/
+
+auto AddOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+std::optional<Typing::Contradiction>
+AddOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
+{
+    return typeCheckArithmeticOp(
+        getOperation(),
+        typeChecker,
+        [](ArrayRef<Extent> bounds) -> Extent {
+            return (bounds[0] + bounds[1]).value_or(Extent(unbounded_t{}));
+        });
+}
+
+auto SubtractOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+std::optional<Typing::Contradiction>
+SubtractOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
+{
+    return typeCheckArithmeticOp(
+        getOperation(),
+        typeChecker,
+        [](ArrayRef<Extent> bounds) -> Extent { return bounds[0]; });
+}
+
+auto MultiplyOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+std::optional<Typing::Contradiction>
+MultiplyOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
+{
+    return typeCheckArithmeticOp(
+        getOperation(),
+        typeChecker,
+        [](ArrayRef<Extent> bounds) -> Extent {
+            if (!bounds[0].isBounded() || !bounds[1].isBounded())
+                return Extent(unbounded_t{});
+            return (bounds[0] * bounds[1].getValue())
+                .value_or(Extent(unbounded_t{}));
+        });
+}
+
+auto DivideOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+std::optional<Typing::Contradiction>
+DivideOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
+{
+    return typeCheckArithmeticOp(
+        getOperation(),
+        typeChecker,
+        [](ArrayRef<Extent> bounds) -> Extent { return bounds[0]; });
+}
+
+auto RemainderOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+std::optional<Typing::Contradiction>
+RemainderOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
+{
+    return typeCheckArithmeticOp(
+        getOperation(),
+        typeChecker,
+        [](ArrayRef<Extent> bounds) -> Extent {
+            if (!bounds[1].isBounded()) return Extent(unbounded_t{});
+            return (bounds[1] - 1).value_or(Extent(unbounded_t{}));
+        });
+}
+
+auto PowerOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+std::optional<Typing::Contradiction>
+PowerOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
+{
+    return typeCheckArithmeticOp(
+        getOperation(),
+        typeChecker,
+        [](ArrayRef<Extent> bounds) -> Extent {
+            return Extent(unbounded_t{});
+        });
+}
+
 //===----------------------------------------------------------------------===//
 // MinOp implementation
 //===----------------------------------------------------------------------===//
@@ -299,35 +449,32 @@ auto MinOp::fold(FoldAdaptor) -> OpFoldResult
 std::optional<Typing::Contradiction>
 MinOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
 {
+    return typeCheckArithmeticOp(
+        getOperation(),
+        typeChecker,
+        [](ArrayRef<Extent> bounds) -> Extent {
+            return std::min(bounds[0], bounds[1]);
+        });
+}
+//===----------------------------------------------------------------------===//
+// MaxOp implementation
+//===----------------------------------------------------------------------===//
 
-    auto lhs          = getLhs();
-    auto rhs          = getRhs();
-    auto result       = getResult();
-    auto result_bound = typeChecker.get(result);
+auto MaxOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
 
-    // llvm::dbgs() << "Result bound: " << result_bound << "\n";
-
-    // try to meet the bounds of the result for both sides
-    auto mlhs = typeChecker.meet(lhs, result.getType());
-    auto mrhs = typeChecker.meet(rhs, result.getType());
-
-    // lhs is not within result's bounds
-    if (auto maybeContra = mlhs.toContra()) {
-        std::printf("Could not meet result + lhs");
-        maybeContra->attachNote(getLoc());
-        maybeContra->append("here");
-        return maybeContra;
-    }
-    // rhs is not within result's bounds
-    if (auto maybeContra = mrhs.toContra()) {
-        std::printf("Could not meet result + rhs");
-        maybeContra->attachNote(getLoc());
-        maybeContra->append(" here");
-        return maybeContra;
-    }
-
-    // Otherwise we refined _something_
-    return std::nullopt;
+std::optional<Typing::Contradiction>
+MaxOp::typeCheck(::mlir::Typing::AbstractTypeChecker &typeChecker)
+{
+    return typeCheckArithmeticOp(
+        getOperation(),
+        typeChecker,
+        [](ArrayRef<Extent> bounds) -> Extent {
+            return std::max(bounds[0], bounds[1]);
+        });
 }
 
 //===----------------------------------------------------------------------===//
