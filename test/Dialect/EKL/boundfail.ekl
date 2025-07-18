@@ -1,0 +1,8 @@
+kernel inverse_helmholtz(
+    a : f64[42],
+    b : f64[42],
+    c : out& f64[50]
+)
+{
+    out c[i] = a[i] + b[i];
+}
