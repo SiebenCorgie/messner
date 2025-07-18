@@ -200,8 +200,21 @@ auto BroadcastOp::typeCheck(AbstractTypeChecker &tc)
 // CoerceOp implementation
 //===----------------------------------------------------------------------===//
 
-auto CoerceOp::typeCheck(AbstractTypeChecker &) -> std::optional<Contradiction>
+auto CoerceOp::typeCheck(AbstractTypeChecker &tc)
+    -> std::optional<Contradiction>
 {
-    // TODO: Implement.
-    return {};
+
+    auto inty = getOperand().getType();
+    if (!inty) {
+        // not yet set
+        return Contradiction();
+    }
+
+    if (mlir::ekl::canCoerce(tc, getOperand(), inty, getType()))
+        return std::nullopt;
+    {
+        auto f = tc.fatal(getLoc());
+        f << "Can not coerce form " << inty << " to " << getType();
+        return f;
+    }
 }

@@ -6,6 +6,9 @@
 #pragma once
 
 #include "messner/Dialect/EKL/IR/Types.h"
+#include "mlir/Typing/TypeChecker.h"
+
+#include <mlir/IR/TypeSystem.h>
 
 namespace mlir::ekl {
 
@@ -38,6 +41,12 @@ auto hasConcreteType(ValueRange values) -> bool;
 /// @pre    `op`
 auto hasConcreteType(Operation *op) -> bool;
 
+/// Determines whether @p from can be coerced to @p to in a given @p typeSystem.
+bool canCoerce(
+    Typing::AbstractTypeChecker &tc,
+    Value owner,
+    Type from,
+    Type to);
 //===----------------------------------------------------------------------===//
 // ABI type constraints
 //===----------------------------------------------------------------------===//
