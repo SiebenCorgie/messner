@@ -423,6 +423,106 @@ class EKL_ExpressionBase<string mnemonic, list<Trait> traits = []>
 }
 
 // SubscriptOp
+def EKL_SubscriptOp : EKL_ExpressionBase<
+        "subscript",
+        [
+            NoMemoryEffect, 
+            DeclareOpInterfaceMethods<ConditionallySpeculatable>,
+            DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>
+        ]> {
+    let summary = "Subscript operator";
+    let description = [{
+        The `ekl.subscript` operator derives a value from an input array using
+        some tuple of indexers. The behavior of the subscript operation depends
+        on the number and type of supplied subscript operands:
+
+        - Full subscripting is when the number of subscript operands (after
+            ellipsis expansion) matches the number of extents on the input
+            array. The result will be a scalar of the input array.
+
+        - Partial subscripting is when there are less subscript operands
+            (after ellipsis expansion) that there are extents on the input
+            array. The result will be an array of the same scalars as the
+            input, but with fewer extents.
+
+        The subscript operation is very versatile, and equivalent to an expanded
+        version of Numpy basic indexing. It is best described by treating arrays
+        as unctions associating indices to scalar values:
+
+        - Scalar index values eliminate an extent from the result,
+            effectively applying the index value.
+
+        - Arrays of indices substitute an extent in the result, effectively
+            composing with the indexer function.
+
+        - The identitiy literal `:` preserves the extent in the result,
+            effectively forwarding the index parameter.
+
+        - The extent literal `*` adds a new unitary extent to the result,
+            effectively declaring and not using an `!ekl<_0>` parameter.
+
+        - The ellipsis literal `...` may only be used once and expands to
+            as many `:` literals as needed to achieve full indexing.
+
+        Example:
+
+        ```
+        // %v = ... -> !ekl.array<si32[8, 9, 10]>
+        // %i = ... -> !ekl.array<!ekl<_7>[2, 3]>
+        %i0 = literal #ekl<_0>
+        %id = literal #ekl<:>
+        %ex = literal #ekl<*>
+        %el = literal #ekl<...>
+
+        // Full indexing returns a single scalar.
+        subscript %v [%i0: #ekl<_0>, %i0: #ekl<_0>, %i0: #ekl<_0>] -> si32
+
+        // Partial indexing returns the remaining array.
+        subscript %v [%i0: #ekl<_0>] -> !ekl.array<si32[9, 10]>
+
+        // Compound indexing substitutes extents.
+        subscript %v [%i, %i] -> !ekl.array<si32[2, 3, 2, 3, 10]>
+
+        // Identity indexing preserves an extent.
+        subscript %v [%id: !ekl<:>, %i0: !ekl<_0>] -> !ekl.array<si32[8, 10]>
+
+        // Extent indexing adds a broadcast extent.
+        subscript %v [%i0: !ekl<_0>, %ex: !ekl<*>] -> !ekl.array<si32[1, 9, 10]>
+
+        // Ellipsis indexing inserts identities.
+        subscript %v [%el: !ekl<*>, %i0: !ekl<_0>] -> !ekl.array<si32[8, 9]>
+        ```
+    }];
+
+    let arguments = (ins
+        EKL_ExpressionType:$array,
+        Variadic<EKL_ExpressionType>:$subscripts);
+    /*
+    let builders = [
+        OpBuilder<(ins
+                "Value":$array,
+                "ValueRange":$subscripts,
+                CArg<"Type", "{}">:$resultBound), [{
+            $_state.addOperands({array});
+            $_state.addOperands(subscripts);
+            $_state.addTypes({ExpressionType::get($_builder.getContext(), resultBound)});
+        }]>];
+    let skipDefaultBuilders = 1;
+    */
+
+    let hasFolder = 1;
+    //let hasCanonicalizer = 1;
+    /*
+        let assemblyFormat = [{
+        custom<Operand>($array, type($array))
+        ` ``[` custom<Operands>($subscripts, type($subscripts)) `]`
+        attr-dict
+        custom<Result>(type($result))
+    }];
+    */
+    code extraClassDeclaration = [{}];
+}
+
 
 // StackOp
 def EKL_StackOp : EKL_ExpressionBase<"stack", [
@@ -459,13 +559,112 @@ def EKL_StackOp : EKL_ExpressionBase<"stack", [
 
 // ChooseOp
 
+
 //===----------------------------------------------------------------------===//
 // Generators
 //===----------------------------------------------------------------------===//
 //
 // Generators are expressions that produce SSA values using functors.
 
+
+class EKL_GeneratorBase<string mnemonic, list<Trait> traits = []>
+        : EKL_ExpressionBase<
+            mnemonic,
+            [
+                EKL_Generator, 
+            //    OpAsmOpInterface
+            ] # traits> {
+    // Remove the getSpeculatability() implementation from EKL_ExpressionBase.
+    //let extraClassDeclaration = "";
+}
+
+
 // MapOp
+
+//NOTE(tendsin): I assume MapOp is what AssocOp used to be? Otherwise
+// the indexing of a subscriptOp can't be verified.
+def EKL_MapOp : EKL_GeneratorBase<
+        "map",
+        [
+            //DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>
+        ]> {
+    let summary = "Index association operator";
+    let description = [{
+        The `ekl.map` operation produces an array value by defining a map from
+        the array index domain to the elements.
+
+        This mapping is described by a functor region that accepts the index
+        values and yields the element value. Its arguments must have
+        `!ekl.index` types, and their bound determines the prefix of the result
+        extents.
+
+        The mapping functor is allowed to return scalars or arrays, with the
+        latter being stacked in the last dimension, effectively concatenating
+        their extents onto the declared extents.
+
+        Contained `ekl.subscript` operations will eagerly propagate known index
+        bounds to the bounds on the index domain. This means that it is not
+        legal to reuse an index for dimensions of different sizes.
+
+        Example:
+
+        ```
+        // %v : = ... -> !ekl.array<si32[4, 7, 9]>
+        %c0 = ekl.literal #ekl<_0>
+
+        ekl.map (%i) {
+            %0 = subscript %v[%i, %c0: !ekl<_0>]
+            yield %0
+        } -> !ekl.array<si32[4, 9]>
+        ```
+    }];
+
+    //let arguments = (ins );
+    let arguments = (ins Variadic<AnyType>:$operands);
+
+    let regions = (region SizedRegion<1>:$mapRegion);
+
+    /*
+    let builders = [
+        OpBuilder<(ins
+                "unsigned":$numExtents,
+                CArg<"FunctorBuilderRef", "{}">:$map,
+                CArg<"ArrayType", "{}">:$resultBound)>,
+        OpBuilder<(ins
+                "ExtentRange":$extents,
+                CArg<"FunctorBuilderRef", "{}">:$map,
+                CArg<"ArrayType", "{}">:$resultBound)>,
+        OpBuilder<(ins
+                CArg<"ArrayType", "{}">:$resultBound,
+                CArg<"FunctorBuilderRef", "{}">:$map)>];
+    
+    let skipDefaultBuilders = 1;
+    */
+    //let hasFolder = 1;
+    //let hasCanonicalizer = 1;
+    /*
+    let assemblyFormat = [{
+        custom<Functor>($mapRegion)
+        attr-dict-with-keyword
+        custom<Result>(type($result))
+    }];
+    */
+    /*
+    code extraClassDeclaration = [{
+        [[nodiscard]] Block* getMap() { return &getMapRegion().front(); }
+        [[nodiscard]] Expression getMapExpression();
+
+        //===--------------------------------------------------------------===//
+        // OpAsmOpInterface
+        //===--------------------------------------------------------------===//
+
+        static StringRef getDefaultDialect()
+        {
+            return EKLDialect::getDialectNamespace();
+        }
+    }];
+    */
+}
 
 // ZipOp
 

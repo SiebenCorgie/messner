@@ -114,6 +114,31 @@ auto StaticOp::checkSemantics(SmallVectorImpl<Diagnostic> &diagnostics)
 }
 
 //===----------------------------------------------------------------------===//
+// SubscriptOp implementation
+//===----------------------------------------------------------------------===//
+
+Speculation::Speculatability SubscriptOp::getSpeculatability()
+{
+    // TODO(tendsin): Not sure how you'd access the type-bound here, since
+    //                that is provided by the typeChecker now...
+    /*
+    const auto isSpeculatable = [](Type type) {
+        const auto bound = getTypeBound(type);
+        if (!bound) return false;
+        if (const auto indexTy = llvm::dyn_cast<ekl::IndexType>(bound); indexTy)
+            return !indexTy.isUnbounded();
+        return llvm::isa<ExtentType>(bound);
+    };
+
+    return llvm::all_of(getSubscripts().getTypes(), isSpeculatable)
+             ? Speculation::Speculatable
+             : Speculation::NotSpeculatable;
+    */
+
+    return Speculation::NotSpeculatable;
+}
+
+//===----------------------------------------------------------------------===//
 // StackOp implementation
 //===----------------------------------------------------------------------===//
 

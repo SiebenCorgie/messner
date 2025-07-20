@@ -10,6 +10,7 @@
 #include "messner/Dialect/EKL/IR/Dialect.h"
 #include "messner/Dialect/EKL/IR/TypeSystem.h"
 #include "messner/Dialect/EKL/IR/Types.h"
+#include "messner/Support/concepts.h"
 
 #include <cstddef>
 #include <cstdio>
@@ -265,6 +266,275 @@ auto GetStaticOp::verifySymbolUses(SymbolTableCollection &symbolTable)
     }
 
     return success();
+}
+
+//===----------------------------------------------------------------------===//
+// SubscriptOp implementation
+//===----------------------------------------------------------------------===//
+
+auto SubscriptOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+[[nodiscard]] static BlockArgument getInferrableIndex(Value value)
+{
+    // Must be a block argument.
+    const auto argument = llvm::dyn_cast<BlockArgument>(value);
+    if (!argument) return {};
+
+    // Must be from the map region of an AssocOp.
+    const auto owner = argument.getOwner()->getParentOp();
+    if (!llvm::isa_and_present<ekl::MapOp>(*owner)) return {};
+    return argument;
+}
+
+static FailureOr<ekl::IndexType> meetIndexBound(
+    Typing::AbstractTypeChecker &typeChecker,
+    BlockArgument index,
+    Extent bound)
+{
+    // Update the bound on the index value, which will fail if there is already
+    // a different bound.
+    // FIXME(tendsin): fromEnd=false correct?
+    const auto type = ekl::IndexType::get(index.getContext(), bound, false);
+    auto mres       = typeChecker.meet(index, type);
+    if (auto contra = mres.toContra()) return failure();
+
+    // This invalidates the owner as well.
+    typeChecker.invalidate(index.getParentRegion()->getParentOp());
+    return type;
+}
+
+static std::optional<Typing::Contradiction> typeCheckSubscripts(
+    Typing::AbstractTypeChecker &tc,
+    ValueRange subscripts,
+    SmallVectorImpl<Type> &bounds)
+{
+    // Check the known types of all subscript operands.
+    auto unbounded = false;
+    std::optional<Value> ellipsis;
+
+    for (auto subscript : subscripts) {
+        auto bound = tc.get(subscript);
+        auto sTy   = subscript.getType();
+        bounds.push_back(bound);
+
+        if (!bound) {
+
+            if (getInferrableIndex(subscript)) {
+                // Will be inferred later.
+                continue;
+            }
+
+            // Definitely stays unbounded.
+            unbounded = true;
+            continue;
+        }
+
+        if (llvm::isa<ekl::EllipsisType>(sTy)) {
+
+            // There may only be a single ellipsis.
+            if (ellipsis) {
+                auto f = tc.fatal(ellipsis->getLoc());
+                f << "more than one ellipsis";
+                f.attachNote(subscript.getLoc()) << "found here";
+                f.attachNote(ellipsis->getLoc())
+                    << "previous ellipsis was here";
+                return f;
+            }
+            ellipsis = subscript;
+
+            continue;
+        }
+
+        // TODO(tendsin): Check that this is right, I'm assuming
+        //                ExtentType == AxisType && IdentityType == SliceType
+        if (llvm::isa<AxisType, SliceType>(sTy)) continue;
+        // TODO(tendsin): lost the getScalarType(bound), not sure if this is
+        // working as expected now...
+        if (llvm::isa_and_present<ekl::IndexType>(sTy)) continue;
+
+        // Type is not a valid indexer.
+        auto f = tc.fatal(subscript.getLoc());
+        f << "expected indexer, but got " << bound;
+        f.attachNote(subscript.getLoc()) << "for this subscript";
+        return f;
+    }
+
+    return unbounded ? std::make_optional(Typing::Contradiction())
+                     : std::nullopt;
+}
+
+template<messner::type_constraint ResultType>
+std::optional<Typing::Contradiction> require(
+    Typing::AbstractTypeChecker &typeChecker,
+    Value owner,
+    Type type,
+    ResultType &result)
+{
+
+    if (!result) {
+        result = ResultType{};
+        return Typing::Contradiction();
+    }
+
+    // Success
+    if ((result = llvm::dyn_cast<ResultType>(type))) return std::nullopt;
+
+    // Failed to cast
+    auto f = typeChecker.fatal(owner.getLoc());
+    f << "expected " << result;
+    return f;
+}
+
+// NOTE(tendsin): cheap copy for now...
+/// Gets the underlying scalar type of @p type , if any.
+///
+/// If @p type is a scalar matching @p ResultType , returns it. If @p type is a
+/// ContiguousType over some @p ResultType , returns that type. Otherwise,
+/// returns @c nullptr .
+///
+/// @tparam ResultType  Additional constraint on the scalar type.
+///
+/// @param              type    The type.
+///
+/// @retval nullptr     @p type is neither a scalar nor an aggregate.
+/// @retval ResultType  The scalar type of @p type .
+template<messner::type_constraint ResultType = ScalarType>
+[[nodiscard]] inline ResultType
+getScalarType(messner::type_constraint auto type)
+{
+    if (!type) return nullptr;
+    if (const auto resultTy = llvm::dyn_cast<ResultType>(type)) return resultTy;
+    if (const auto contiguousTy = llvm::dyn_cast<ContiguousType>(type))
+        return llvm::dyn_cast<ResultType>(contiguousTy.getScalarType());
+    return nullptr;
+}
+
+// NOTE(tendsin): cheap copy for now...
+/// Gets the aggregate extents of @p type , if any.
+///
+/// If @p type is a ContiguousType, returns its extents. If @p type is a
+/// ScalarType, returns the empty ExtentRange. Otherwise, fails.
+///
+/// @param              type    The type.
+///
+/// @retval failure     @p type is not contiguous or scalar.
+/// @retval ExtentRange The extents of @p type .
+inline FailureOr<ShapeRef> getExtents(messner::type_constraint auto type)
+{
+    if (llvm::isa_and_present<ScalarType>(type)) return ShapeRef{};
+    if (const auto contiguousTy =
+            llvm::dyn_cast_if_present<ContiguousType>(type))
+        return contiguousTy.getShape();
+
+    return failure();
+}
+
+auto SubscriptOp::typeCheck(Typing::AbstractTypeChecker &typeChecker)
+    -> std::optional<Typing::Contradiction>
+{
+    // Try to unwrap the ArrayBound as an ArrayType.
+    auto inTy = typeChecker.get(getArray());
+    ArrayType arrayTy;
+    if (auto contra = require(typeChecker, getResult(), inTy, arrayTy))
+        return contra;
+
+    // Type check subscripts
+    llvm::SmallVector<Type> subscriptTys;
+
+    if (auto contra =
+            typeCheckSubscripts(typeChecker, getSubscripts(), subscriptTys)) {
+        return contra;
+    }
+
+    // FIXME(tendsin): Again, I'm assuming ExtentType == AxisType
+    //  Infer the result extents
+    auto sourceDim = 0U;
+    llvm::SmallVector<Extent> extents;
+    for (auto [idx, value] : llvm::enumerate(getSubscripts())) {
+        auto bound = subscriptTys[idx];
+        if (llvm::isa_and_present<AxisType>(bound)) {
+            // Insert a new unit dimension.
+            extents.push_back(Extent(1UL));
+            continue;
+        } else if (llvm::isa_and_present<EllipsisType>(bound)) {
+            // Count the number of remaining subscripts that will bind to a
+            // source dimension.
+            const auto remaining = static_cast<size_t>(llvm::count_if(
+                ArrayRef<Type>(subscriptTys).drop_front(idx + 1),
+                [](Type type) { return !type || !llvm::isa<AxisType>(type); }));
+            // Insert the identity indexer until enough dimensions are bound.
+            while (remaining < (arrayTy.getNumExtents() - sourceDim))
+                extents.push_back(arrayTy.getExtent(sourceDim++));
+            continue;
+        }
+
+        // For all other kinds of subscripts, bind 1 source dimension.
+        if (sourceDim == arrayTy.getNumExtents()) {
+            auto f = typeChecker.fatal(getLoc());
+            f << "exceeded number of array extents (" << arrayTy.getNumExtents()
+              << ")";
+            f.attachNote(value.getLoc()) << "with this subscript";
+            return f;
+        }
+
+        if (!bound) {
+            const auto index = getInferrableIndex(value);
+            assert(index);
+
+            // The subscript type checker let this through because it can be
+            // inferred from the array extents here.
+            auto lower_extent = (arrayTy.getExtent(sourceDim) - Extent(1UL));
+            // make sure it exists
+            assert(lower_extent && lower_extent->isBounded());
+            Extent meetExt = lower_extent.value();
+
+            const auto meet = meetIndexBound(typeChecker, index, meetExt);
+            if (failed(meet)) return typeChecker.fatal(getLoc());
+            bound = *meet;
+            assert(bound);
+            // FIXME(tendsin): assuming IdentityType == SliceType
+            // I _think_ thats not correct tho.
+        } else if (llvm::isa<SliceType>(bound)) {
+            // Map this dimension using the identity.
+            extents.push_back(arrayTy.getExtent(sourceDim++));
+            continue;
+        }
+
+        const IndexType indexTy =
+            llvm::cast<ekl::IndexType>(getScalarType(bound));
+
+        // Handle statically known index bounds.
+        if (indexTy.isBounded()
+            && indexTy.getBound() >= arrayTy.getExtent(sourceDim)) {
+            auto f = typeChecker.fatal(getLoc());
+            f << "index out of bounds (" << indexTy.getBound().getValue()
+              << " >= " << arrayTy.getExtent(sourceDim).getValue() << ")";
+            f.attachNote(value.getLoc()) << "for this subscript";
+            return f;
+        }
+
+        // Insert the indexer's extents here, and skip this dimension in the
+        // source.
+        ++sourceDim;
+        concat(extents, getExtents(bound).value_or(ShapeRef{}));
+    }
+
+    // For partial subscripting, append all the remaining dimensions.
+    concat(extents, arrayTy.getShape().drop_front(sourceDim));
+
+    // The result is an array with the inferred extents, decaying to a scalar
+    // if the extents are empty.
+    Type resultTy = arrayTy.getScalarType();
+    if (!extents.empty()) resultTy = ArrayType::get(resultTy, extents);
+
+    auto mres = typeChecker.meet(getResult(), resultTy);
+    if (auto contra = mres.toContra()) return contra;
+    // success
+    return std::nullopt;
 }
 
 //===----------------------------------------------------------------------===//
