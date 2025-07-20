@@ -14,6 +14,7 @@
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Diagnostics.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Typing/Contradiction.h>
 #include <mlir/Typing/TypeChecker.h>
 #include <optional>
@@ -110,6 +111,16 @@ auto StaticOp::checkSemantics(SmallVectorImpl<Diagnostic> &diagnostics)
     }
 
     return success();
+}
+
+//===----------------------------------------------------------------------===//
+// StackOp implementation
+//===----------------------------------------------------------------------===//
+
+auto StackOp::getSpeculatability() -> Speculation::Speculatability
+{
+    // TODO: implement
+    return Speculation::NotSpeculatable;
 }
 
 //===----------------------------------------------------------------------===//

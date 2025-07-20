@@ -423,7 +423,40 @@ class EKL_ExpressionBase<string mnemonic, list<Trait> traits = []>
 }
 
 // SubscriptOp
+
 // StackOp
+def EKL_StackOp : EKL_ExpressionBase<"stack", [
+            Pure, 
+            DeclareOpInterfaceMethods<TypeCheckOpInterface, ["typeCheck"]>, 
+            // Depending on the reference kind, may be speculatable.
+            DeclareOpInterfaceMethods<ConditionallySpeculatable>
+]> {
+    let summary = "Stacking operator";
+    let description = [{
+        The `ekl.stack` operation produces an array by concatenating its
+        operands ("stacking" them in a new outer extent). For this, the operands
+        must broadcast and unify to a common array type.
+
+        Example:
+
+        ```
+        ekl.stack %0: !ekl.array<si32[3]>, %1: si32 -> !ekl.array<si32[2, 3]>
+        ```
+    }];
+
+    // NOTE: Unfortunately, minSize on Variadic can't be used, so this can't be
+    //       an early executed ODS verifier.
+    //let hasVerifier = 1;
+    let hasFolder = 1;
+    /*
+    let assemblyFormat = [{
+        `[` custom<Operands>($operands, type($operands)) `]`
+        attr-dict
+        custom<Result>(type($result))
+    }];
+    */
+}
+
 // ChooseOp
 
 //===----------------------------------------------------------------------===//
@@ -433,9 +466,13 @@ class EKL_ExpressionBase<string mnemonic, list<Trait> traits = []>
 // Generators are expressions that produce SSA values using functors.
 
 // MapOp
+
 // ZipOp
+
 // FoldOp
+
 // LambdaOp
+
 // ConstevalOp
 
 def EKL_LambdaOp : EKL_Op<"lambda", [Pure]> {

@@ -268,6 +268,37 @@ auto GetStaticOp::verifySymbolUses(SymbolTableCollection &symbolTable)
 }
 
 //===----------------------------------------------------------------------===//
+// StackOp implementation
+//===----------------------------------------------------------------------===//
+
+auto StackOp::fold(FoldAdaptor) -> OpFoldResult
+{
+    // TODO: Implement.
+    return {};
+}
+
+auto StackOp::typeCheck(Typing::AbstractTypeChecker &typeChecker)
+    -> std::optional<Typing::Contradiction>
+{
+    // must BroadcastAndUnify
+    BroadcastType unfiedTy;
+    if (auto contra =
+            broadcastAndPromote(getOperation(), typeChecker, unfiedTy))
+        return contra;
+
+    // The result extents are determined by the unified extents, prepended by
+    // the number of stacked atoms.
+    auto resultExtents =
+        concat(Extent(getOperands().size()), unfiedTy.getShape());
+
+    auto mres =
+        typeChecker.meet(getResult(), unfiedTy.cloneWith(resultExtents));
+    if (auto maybeContra = mres.toContra()) return maybeContra;
+
+    return std::nullopt;
+}
+
+//===----------------------------------------------------------------------===//
 // PromoteOp implementation
 //===----------------------------------------------------------------------===//
 
